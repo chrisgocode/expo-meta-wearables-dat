@@ -5,14 +5,15 @@ import android.net.Uri
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.GlassesModel
 import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 import com.meta.wearable.dat.mockdevice.api.MockDeviceKitInterface
-import com.meta.wearable.dat.mockdevice.api.MockRaybanMeta
+import com.meta.wearable.dat.mockdevice.api.MockGlasses
 import com.meta.wearable.dat.mockdevice.api.camera.CameraFacing
 
 object MockDeviceManager {
     private val logger = EMWDATLogger
-    private var devices: MutableMap<String, MockRaybanMeta> = mutableMapOf()
+    private var devices: MutableMap<String, MockGlasses> = mutableMapOf()
     private var mockDeviceKit: MockDeviceKitInterface? = null
 
     private fun getKit(context: Context): MockDeviceKitInterface {
@@ -50,12 +51,17 @@ object MockDeviceManager {
 
     // MARK: - Pair / Unpair
 
-    fun pairMockDevice(context: Context): String {
+    fun pairMockDevice(context: Context, model: String): String {
         val kit = getKit(context)
-        val device = kit.pairRaybanMeta()
+        val device = kit.pairGlasses(mapGlassesModel(model)).fold(
+            onSuccess = { it },
+            onFailure = { error, _ ->
+                throw IllegalStateException("Failed to pair mock device: ${error.description}")
+            }
+        )
         val id = device.deviceIdentifier.toString()
         devices[id] = device
-        logger.info("MockDeviceManager", "Paired mock device", mapOf("id" to id))
+        logger.info("MockDeviceManager", "Paired mock device", mapOf("id" to id, "model" to model))
         return id
     }
 
@@ -104,24 +110,34 @@ object MockDeviceManager {
     fun setCameraFeed(id: String, fileUrl: String) {
         val device = getDevice(id)
         val uri = parseUri(fileUrl)
-        device.services.cameraKit.setCameraFeed(uri)
+        device.services.camera.setCameraFeed(uri)
         logger.info("MockDeviceManager", "Set camera feed", mapOf("id" to id, "uri" to uri.toString()))
     }
 
     fun setCapturedImage(id: String, fileUrl: String) {
         val device = getDevice(id)
         val uri = parseUri(fileUrl)
-        device.services.cameraKit.setCapturedImage(uri)
+        device.services.camera.setCapturedImage(uri)
         logger.info("MockDeviceManager", "Set captured image", mapOf("id" to id, "uri" to uri.toString()))
     }
 
-    // MARK: - Camera (phone camera — new in SDK 0.6)
+    // MARK: - Camera (phone camera — SDK 0.6+)
 
     fun setCameraFeedFromCamera(id: String, facing: String) {
         val device = getDevice(id)
         val cameraFacing = if (facing == "back") CameraFacing.BACK else CameraFacing.FRONT
-        device.services.cameraKit.setCameraFeed(cameraFacing)
+        device.services.camera.setCameraFeed(cameraFacing)
         logger.info("MockDeviceManager", "Set camera feed from camera", mapOf("id" to id, "facing" to facing))
+    }
+
+    // MARK: - Captouch (SDK 0.7+)
+
+    fun tap(id: String) {
+        getDevice(id).services.captouch.tap()
+    }
+
+    fun tapAndHold(id: String) {
+        getDevice(id).services.captouch.tapAndHold()
     }
 
     // MARK: - Permissions
@@ -150,7 +166,15 @@ object MockDeviceManager {
 
     // MARK: - Helpers
 
-    private fun getDevice(id: String): MockRaybanMeta {
+    private fun mapGlassesModel(model: String): GlassesModel = when (model) {
+        "oakleyMetaHSTN" -> GlassesModel.OAKLEY_META_HSTN
+        "oakleyMetaVanguard" -> GlassesModel.OAKLEY_META_VANGUARD
+        "rayBanMetaOptics" -> GlassesModel.RAYBAN_META_OPTICS
+        "metaGlasses" -> GlassesModel.META_GLASSES
+        else -> GlassesModel.RAYBAN_META
+    }
+
+    private fun getDevice(id: String): MockGlasses {
         return devices[id] ?: throw IllegalArgumentException("Mock device not found: $id")
     }
 

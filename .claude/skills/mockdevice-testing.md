@@ -1,17 +1,16 @@
 ---
+name: mockdevice-testing
 description: MockDeviceKit for testing without physical glasses hardware
 ---
 
 # MockDevice Testing (Android)
 
-Guide for testing DAT SDK integrations without physical Meta glasses.
-
-## Overview
+Use MockDeviceKit to test DAT SDK integrations without physical Meta glasses.
 
 MockDeviceKit simulates Meta glasses behavior for development and testing. It provides:
 
 - `MockDeviceKit` — Entry point for creating simulated devices
-- `MockRaybanMeta` — Simulated Ray-Ban Meta glasses
+- `MockGlasses` — Simulated Ray-Ban Meta glasses
 - `MockCameraKit` — Simulated camera with configurable video feed and photo capture
 
 ## Setup
@@ -28,10 +27,21 @@ dependencies {
 
 ```kotlin
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 
 val mockDeviceKit = MockDeviceKit.getInstance(context)
-val device = mockDeviceKit.pairRaybanMeta()
+
+// Attach fake registration and connectivity (auto-initializes Wearables if needed).
+// By default, Wearables.registrationState transitions to Registered.
+mockDeviceKit.enable()
+
+// Or start in unregistered state to test registration flows:
+// mockDeviceKit.enable(MockDeviceKitConfig(initiallyRegistered = false))
+
+val device = mockDeviceKit.pairGlasses(GlassesModel.RAYBAN_META).getOrThrow()
 ```
+
+You can check `mockDeviceKit.isEnabled` to query whether the mock environment is active.
 
 ## Simulating device states
 
@@ -47,19 +57,35 @@ device.fold()
 device.powerOff()
 ```
 
+## Configuring permissions
+
+MockDeviceKit provides `permissions` to control permission behavior without the Meta AI app.
+
+By default, `RequestPermissionContract` returns `Granted`. Use `set()` to control `checkPermissionStatus()` and `setRequestResult()` to control request outcomes.
+
+```kotlin
+val mockDeviceKit = MockDeviceKit.getInstance(context)
+
+// Simulate denied camera permission status
+mockDeviceKit.permissions.set(Permission.CAMERA, PermissionStatus.Denied)
+
+// Simulate denied request result (user tapping "deny")
+mockDeviceKit.permissions.setRequestResult(Permission.CAMERA, PermissionStatus.Denied)
+```
+
 ## Setting up mock camera feeds
 
 ### Video streaming
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCameraFeed(videoUri)
 ```
 
 ### Photo capture
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCapturedImage(imageUri)
 ```
 
@@ -102,7 +128,7 @@ open class MockDeviceKitTestCase<T : Any>(
 
     @After
     open fun tearDown() {
-        mockDeviceKit.reset()
+        mockDeviceKit.disable()
     }
 
     private fun grantRuntimePermissions() {

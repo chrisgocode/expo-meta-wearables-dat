@@ -12,8 +12,16 @@ export type LogLevel = "debug" | "info" | "warn" | "error" | "none";
 
 /**
  * Registration state flow: unavailable → available → registering → registered
+ *
+ * Android additionally reports `unregistering` while a registration is being
+ * torn down; iOS collapses that into `unavailable`.
  */
-export type RegistrationState = "unavailable" | "available" | "registering" | "registered";
+export type RegistrationState =
+  | "unavailable"
+  | "available"
+  | "registering"
+  | "registered"
+  | "unregistering";
 
 // =============================================================================
 // PERMISSIONS
@@ -43,6 +51,7 @@ export type DeviceType =
   | "oakleyMetaVanguard"
   | "metaRayBanDisplay"
   | "rayBanMetaOptics"
+  | "metaGlasses"
   | "unknown";
 
 export interface Device {
@@ -51,6 +60,24 @@ export interface Device {
   linkState: LinkState;
   deviceType: DeviceType;
   compatibility: Compatibility;
+  /** Whether this device can render display content (Meta Ray-Ban Display). */
+  supportsDisplay: boolean;
+}
+
+/** Per-device thermal state reported by the glasses. */
+export type ThermalLevel =
+  | "unknown"
+  | "none"
+  | "light"
+  | "moderate"
+  | "severe"
+  | "critical"
+  | "emergency"
+  | "shutdown";
+
+/** Live device state (SDK 0.7+). */
+export interface DeviceState {
+  thermalLevel: ThermalLevel;
 }
 
 // =============================================================================
@@ -61,35 +88,51 @@ export type StreamingResolution = "high" | "medium" | "low";
 
 export type VideoCodec = "raw" | "hvc1";
 
-export interface StreamSessionConfig {
+/** Frame rates accepted by the SDK. */
+export type StreamFrameRate = 2 | 7 | 15 | 24 | 30;
+
+export interface StreamConfiguration {
   videoCodec: VideoCodec;
   resolution: StreamingResolution;
   frameRate: number;
   /** Target a specific device by identifier. When omitted, auto-selects a connected device. */
   deviceId?: DeviceIdentifier;
   /**
-   * When true, the SDK delivers compressed HEVC buffers instead of decoded YUV pixel data.
+   * When true, the SDK delivers compressed HEVC buffers instead of decoded pixel data.
    * On iOS this maps to videoCodec "hvc1". On Android it uses StreamConfiguration.compressVideo.
    * Default: false.
    */
   compressVideo?: boolean;
-  /**
-   * Whether to skip launching the native app on the device when starting the stream.
-   * iOS only. Default: false.
-   */
-  skipAppLaunch?: boolean;
 }
 
+/** @deprecated Renamed to {@link StreamConfiguration} to match SDK 0.7+. */
+export type StreamSessionConfig = StreamConfiguration;
+
 /**
- * Stream session state flow: stopped → waitingForDevice → starting → streaming/paused → stopping → stopped
+ * Camera stream state.
+ *
+ * iOS: stopping → stopped → waitingForDevice → starting → streaming → paused.
+ * Android: STARTING → STARTED → STREAMING → PAUSED → STOPPING → STOPPED → CLOSED.
+ * The union covers both; `waitingForDevice` is iOS-only, `started`/`closed` are Android-only.
  */
-export type StreamSessionState =
+export type StreamState =
   | "stopping"
   | "stopped"
+  | "closed"
   | "waitingForDevice"
   | "starting"
+  | "started"
   | "streaming"
   | "paused";
+
+/** @deprecated Renamed to {@link StreamState} to match SDK 0.7+. */
+export type StreamSessionState = StreamState;
+
+/**
+ * Lifecycle of the `Camera` capability that owns the camera hardware (SDK 0.9+).
+ * Stopping the camera cascades to its stream child.
+ */
+export type CameraState = "starting" | "started" | "stopping" | "stopped";
 
 /**
  * Metadata sent over the bridge for each video frame.
@@ -101,6 +144,8 @@ export interface VideoFrameMetadata {
   height: number;
   /** Whether this frame contains compressed HEVC data (true) or decoded pixel data (false). */
   isCompressed?: boolean;
+  /** Android only — whether the frame carries HEVC codec configuration instead of picture data. */
+  isCodecConfig?: boolean;
 }
 
 // =============================================================================
@@ -136,6 +181,9 @@ export type DeviceSessionState =
 
 /**
  * Errors that can occur during DeviceSession operations.
+ *
+ * `capabilityDenied`, `deviceDisconnected` and `sessionEndedByDevice` are Android-only;
+ * every other case exists on both platforms.
  */
 export type DeviceSessionErrorCode =
   | "noEligibleDevice"
@@ -144,10 +192,19 @@ export type DeviceSessionErrorCode =
   | "sessionIdle"
   | "capabilityAlreadyActive"
   | "capabilityNotFound"
+  | "capabilityDenied"
+  | "deviceDisconnected"
+  | "sessionEndedByDevice"
+  | "thermalCritical"
+  | "thermalEmergency"
+  | "peakPowerShutdown"
+  | "batteryCritical"
+  | "datAppOnTheGlassesUpdateRequired"
+  | "dwaUnavailable"
   | "unexpectedError";
 
 /**
- * State of a capability (e.g. Stream) attached to a DeviceSession.
+ * State of a capability (e.g. Camera) attached to a DeviceSession.
  */
 export type CapabilityState = "active" | "stopped";
 
@@ -165,6 +222,14 @@ export interface MockDeviceKitConfig {
   initialPermissionsGranted?: boolean;
 }
 
+/** Glasses models MockDeviceKit can simulate (SDK 0.8+). */
+export type GlassesModel =
+  | "rayBanMeta"
+  | "oakleyMetaHSTN"
+  | "oakleyMetaVanguard"
+  | "rayBanMetaOptics"
+  | "metaGlasses";
+
 /**
  * Which phone camera to use as mock device camera source.
  */
@@ -174,19 +239,27 @@ export type CameraFacing = "front" | "back";
 // ERRORS
 // =============================================================================
 
-export type WearablesErrorCode = "internalError" | "alreadyConfigured" | "configurationError";
+export type WearablesErrorCode =
+  | "internalError"
+  | "alreadyConfigured"
+  | "configurationError"
+  | "notInitialized";
 
 export type RegistrationErrorCode =
   | "alreadyRegistered"
   | "configurationInvalid"
   | "metaAINotInstalled"
   | "networkUnavailable"
+  | "timeout"
+  | "failedToRegister"
   | "unknown";
 
 export type UnregistrationErrorCode =
   | "alreadyUnregistered"
   | "configurationInvalid"
   | "metaAINotInstalled"
+  | "timeout"
+  | "failedToUnregister"
   | "unknown";
 
 export type PermissionErrorCode =
@@ -198,21 +271,51 @@ export type PermissionErrorCode =
   | "requestTimeout"
   | "internalError";
 
+/** Errors from openFirmwareUpdate() / openDATGlassesAppUpdate() (SDK 0.7+). */
+export type NavigationErrorCode = "metaAINotInstalled" | "notRegistered";
+
 export type WearablesHandleURLErrorCode = "registrationError" | "unregistrationError";
 
-/** Discriminated union — errors with associated values carry extra fields. */
-export type StreamSessionError =
+/**
+ * Discriminated union — errors with associated values carry extra fields.
+ *
+ * iOS reports `internalError`, `deviceNotFound`, `deviceNotConnected`, `videoStreamingError`,
+ * `thermalCritical`, `thermalEmergency`, `peakPowerShutdown`, `batteryCritical` and
+ * `photoCaptureFailed`. Android reports `videoStreamingError` (STREAM_ERROR),
+ * `criticalStreamError`, `thermalHot`, `batteryLow` and `peakPowerLimit`.
+ * `timeout`, `permissionDenied` and `hingesClosed` exist on both.
+ */
+export type StreamError =
   | { type: "internalError" }
+  | { type: "criticalStreamError" }
   | { type: "deviceNotFound"; deviceId: DeviceIdentifier }
   | { type: "deviceNotConnected"; deviceId: DeviceIdentifier }
   | { type: "timeout" }
   | { type: "videoStreamingError" }
   | { type: "permissionDenied" }
   | { type: "hingesClosed" }
-  | { type: "thermalCritical" };
+  | { type: "thermalCritical" }
+  | { type: "thermalHot" }
+  | { type: "thermalEmergency" }
+  | { type: "peakPowerShutdown" }
+  | { type: "peakPowerLimit" }
+  | { type: "batteryCritical" }
+  | { type: "batteryLow" }
+  | { type: "photoCaptureFailed" };
 
-export type StreamSessionErrorCode = StreamSessionError["type"];
+export type StreamErrorCode = StreamError["type"];
 
+/** @deprecated Renamed to {@link StreamError} to match SDK 0.7+. */
+export type StreamSessionError = StreamError;
+/** @deprecated Renamed to {@link StreamErrorCode} to match SDK 0.7+. */
+export type StreamSessionErrorCode = StreamErrorCode;
+
+/**
+ * Photo capture failures.
+ *
+ * Android surfaces these as a typed `CaptureError`. iOS removed `CaptureError` in SDK 0.9 —
+ * capture failures arrive on the stream error publisher as `photoCaptureFailed`.
+ */
 export type CaptureError =
   | "deviceDisconnected"
   | "notStreaming"
@@ -237,10 +340,15 @@ export type EMWDATModuleEvents = {
   onRegistrationStateChange: (payload: { state: RegistrationState }) => void;
   onDevicesChange: (payload: { devices: Device[] }) => void;
   onLinkStateChange: (payload: { deviceId: DeviceIdentifier; linkState: LinkState }) => void;
-  onStreamStateChange: (payload: { state: StreamSessionState }) => void;
+  onDeviceStateChange: (payload: {
+    deviceId: DeviceIdentifier;
+    thermalLevel: ThermalLevel;
+  }) => void;
+  onStreamStateChange: (payload: { sessionId: string; state: StreamState }) => void;
+  onCameraStateChange: (payload: { sessionId: string; state: CameraState }) => void;
   onVideoFrame: (payload: VideoFrameMetadata) => void;
   onPhotoCaptured: (payload: PhotoData) => void;
-  onStreamError: (payload: StreamSessionError) => void;
+  onStreamError: (payload: StreamError) => void;
   onPermissionStatusChange: (payload: { permission: Permission; status: PermissionStatus }) => void;
   onCompatibilityChange: (payload: {
     deviceId: DeviceIdentifier;
@@ -265,10 +373,12 @@ export interface MetaWearablesCallbacks {
   onRegistrationStateChange?: (state: RegistrationState) => void;
   onDevicesChange?: (devices: Device[]) => void;
   onLinkStateChange?: (deviceId: DeviceIdentifier, linkState: LinkState) => void;
-  onStreamStateChange?: (state: StreamSessionState) => void;
+  onDeviceStateChange?: (deviceId: DeviceIdentifier, thermalLevel: ThermalLevel) => void;
+  onStreamStateChange?: (state: StreamState, sessionId: string) => void;
+  onCameraStateChange?: (state: CameraState, sessionId: string) => void;
   onVideoFrame?: (metadata: VideoFrameMetadata) => void;
   onPhotoCaptured?: (photo: PhotoData) => void;
-  onStreamError?: (error: StreamSessionError) => void;
+  onStreamError?: (error: StreamError) => void;
   onPermissionStatusChange?: (permission: Permission, status: PermissionStatus) => void;
   onCompatibilityChange?: (deviceId: DeviceIdentifier, compatibility: Compatibility) => void;
   onDeviceSessionStateChange?: (sessionId: string, state: DeviceSessionState) => void;
@@ -299,10 +409,12 @@ export interface UseMetaWearablesReturn {
   registrationState: RegistrationState;
   permissionStatus: PermissionStatus;
   devices: Device[];
+  deviceStates: Record<DeviceIdentifier, DeviceState>;
   deviceSessionStates: Record<string, DeviceSessionState>;
   deviceSessionErrors: Record<string, { error: DeviceSessionErrorCode; message?: string }>;
   capabilityStates: Record<string, CapabilityState>;
-  streamState: StreamSessionState;
+  streamState: StreamState;
+  cameraState: CameraState;
 
   // Actions — configuration
   configure: () => Promise<void>;
@@ -319,12 +431,18 @@ export interface UseMetaWearablesReturn {
   // Actions — devices
   getDevice: (identifier: DeviceIdentifier) => Promise<Device | null>;
   refreshDevices: () => Promise<Device[]>;
+  openFirmwareUpdate: () => Promise<void>;
+  openDATGlassesAppUpdate: () => Promise<void>;
 
   // Actions — session-based streaming
   createSession: (deviceId?: DeviceIdentifier) => Promise<string>;
   startSession: (sessionId: string) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
-  addStreamToSession: (sessionId: string, config?: Partial<StreamSessionConfig>) => Promise<void>;
+  addCameraToSession: (sessionId: string, config?: Partial<StreamConfiguration>) => Promise<void>;
+  removeCameraFromSession: (sessionId: string) => Promise<void>;
+  /** @deprecated Renamed to {@link UseMetaWearablesReturn.addCameraToSession} for SDK 0.9. */
+  addStreamToSession: (sessionId: string, config?: Partial<StreamConfiguration>) => Promise<void>;
+  /** @deprecated Renamed to {@link UseMetaWearablesReturn.removeCameraFromSession} for SDK 0.9. */
   removeStreamFromSession: (sessionId: string) => Promise<void>;
   capturePhoto: (format?: PhotoCaptureFormat) => Promise<void>;
 
@@ -332,7 +450,7 @@ export interface UseMetaWearablesReturn {
   enableMockDeviceKit: (config?: MockDeviceKitConfig) => Promise<void>;
   disableMockDeviceKit: () => Promise<void>;
   isMockDeviceKitEnabled: () => Promise<boolean>;
-  pairMockDevice: () => Promise<string>;
+  pairMockDevice: (model?: GlassesModel) => Promise<string>;
   unpairMockDevice: (deviceId: string) => Promise<void>;
   mockSetPermissionStatus: (permission: Permission, status: PermissionStatus) => Promise<void>;
   mockSetPermissionRequestResult: (
@@ -340,6 +458,8 @@ export interface UseMetaWearablesReturn {
     result: PermissionStatus
   ) => Promise<void>;
   mockDeviceSetCameraFeedFromCamera: (id: string, facing: CameraFacing) => Promise<void>;
+  mockDeviceTap: (id: string) => Promise<void>;
+  mockDeviceTapAndHold: (id: string) => Promise<void>;
 }
 
 // =============================================================================
@@ -369,4 +489,6 @@ export interface EMWDATPluginProps {
   bluetoothUsageDescription?: string;
   /** GitHub token for accessing Meta Wearables Maven packages. Falls back to GITHUB_TOKEN env var. */
   githubToken?: string;
+  /** Opt out of DAT SDK crash reporting (SDK 0.9+). Default: false. */
+  crashReportingOptOut?: boolean;
 }

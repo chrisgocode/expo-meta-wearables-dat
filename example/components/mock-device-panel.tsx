@@ -1,8 +1,6 @@
-import { Feather } from "@expo/vector-icons";
-import { getDocumentAsync } from "expo-document-picker";
 import {
-  createMockDevice,
-  removeMockDevice,
+  pairMockDevice,
+  unpairMockDevice,
   getMockDevices,
   mockDevicePowerOn,
   mockDevicePowerOff,
@@ -12,7 +10,9 @@ import {
   mockDeviceUnfold,
   mockDeviceSetCameraFeed,
   mockDeviceSetCapturedImage,
-} from "expo-meta-wearables-dat";
+} from "@chrisgocode/expo-meta-wearables-dat";
+import { Feather } from "@expo/vector-icons";
+import { getDocumentAsync } from "expo-document-picker";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -39,7 +39,7 @@ export function MockDevicePanel() {
   };
 
   const handleCreate = useCallback(async () => {
-    const id = await createMockDevice();
+    const id = await pairMockDevice();
     setDevices((prev) => [
       ...prev,
       {
@@ -54,7 +54,7 @@ export function MockDevicePanel() {
   }, []);
 
   const handleRemove = useCallback(async (id: string) => {
-    await removeMockDevice(id);
+    await unpairMockDevice(id);
     setDevices((prev) => prev.filter((d) => d.id !== id));
   }, []);
 

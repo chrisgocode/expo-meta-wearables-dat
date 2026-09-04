@@ -42,6 +42,12 @@ class EMWDATWebModule extends NativeModule<EMWDATModuleEvents> {
   getDevice(): Promise<null> {
     unsupported();
   }
+  openFirmwareUpdate(): Promise<void> {
+    unsupported();
+  }
+  openDATGlassesAppUpdate(): Promise<void> {
+    unsupported();
+  }
 
   // Session-based streaming
   createSession(): Promise<string> {
@@ -53,10 +59,10 @@ class EMWDATWebModule extends NativeModule<EMWDATModuleEvents> {
   stopSession(): Promise<void> {
     unsupported();
   }
-  addStreamToSession(): Promise<void> {
+  addCameraToSession(): Promise<void> {
     unsupported();
   }
-  removeStreamFromSession(): Promise<void> {
+  removeCameraFromSession(): Promise<void> {
     unsupported();
   }
   capturePhoto(): Promise<void> {
@@ -98,6 +104,12 @@ class EMWDATWebModule extends NativeModule<EMWDATModuleEvents> {
     unsupported();
   }
   mockDeviceUnfold(): Promise<void> {
+    unsupported();
+  }
+  mockDeviceTap(): Promise<void> {
+    unsupported();
+  }
+  mockDeviceTapAndHold(): Promise<void> {
     unsupported();
   }
   mockDeviceSetCameraFeed(): Promise<void> {
@@ -161,6 +173,12 @@ export async function getDevices(): Promise<never[]> {
 export async function getDevice(): Promise<null> {
   unsupported();
 }
+export async function openFirmwareUpdate(): Promise<void> {
+  unsupported();
+}
+export async function openDATGlassesAppUpdate(): Promise<void> {
+  unsupported();
+}
 
 // Session-based streaming
 export async function createSession(): Promise<never> {
@@ -172,9 +190,17 @@ export async function startSession(): Promise<void> {
 export async function stopSession(): Promise<void> {
   unsupported();
 }
+export async function addCameraToSession(): Promise<void> {
+  unsupported();
+}
+export async function removeCameraFromSession(): Promise<void> {
+  unsupported();
+}
+/** @deprecated Renamed to {@link addCameraToSession} for SDK 0.9. */
 export async function addStreamToSession(): Promise<void> {
   unsupported();
 }
+/** @deprecated Renamed to {@link removeCameraFromSession} for SDK 0.9. */
 export async function removeStreamFromSession(): Promise<void> {
   unsupported();
 }
@@ -217,6 +243,12 @@ export async function mockDeviceFold(): Promise<void> {
   unsupported();
 }
 export async function mockDeviceUnfold(): Promise<void> {
+  unsupported();
+}
+export async function mockDeviceTap(): Promise<void> {
+  unsupported();
+}
+export async function mockDeviceTapAndHold(): Promise<void> {
   unsupported();
 }
 export async function mockDeviceSetCameraFeed(): Promise<void> {

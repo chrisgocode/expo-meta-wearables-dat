@@ -1,5 +1,5 @@
+import type { Device } from "@chrisgocode/expo-meta-wearables-dat";
 import { Ionicons } from "@expo/vector-icons";
-import type { Device } from "expo-meta-wearables-dat";
 import { StyleSheet, Text, View } from "react-native";
 
 import { StatusRow } from "./ui";

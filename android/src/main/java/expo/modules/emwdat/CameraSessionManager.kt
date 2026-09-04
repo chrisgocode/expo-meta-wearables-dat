@@ -7,11 +7,16 @@ import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.exifinterface.media.ExifInterface
+import com.meta.wearable.dat.camera.Camera
 import com.meta.wearable.dat.camera.Stream
+import com.meta.wearable.dat.camera.addCamera
+import com.meta.wearable.dat.camera.removeCamera
+import com.meta.wearable.dat.camera.types.CameraState
 import com.meta.wearable.dat.camera.types.CaptureError
 import com.meta.wearable.dat.camera.types.PhotoData
 import com.meta.wearable.dat.camera.types.StreamConfiguration
-import com.meta.wearable.dat.camera.types.StreamSessionState
+import com.meta.wearable.dat.camera.types.StreamError
+import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.camera.types.VideoFrame
 import com.meta.wearable.dat.camera.types.VideoQuality
 import kotlinx.coroutines.CoroutineScope
@@ -23,13 +28,22 @@ import java.io.File
 
 typealias FrameCallback = (Bitmap) -> Unit
 
-object StreamSessionManager {
+/**
+ * Manages the camera capability attached to a [com.meta.wearable.dat.core.session.DeviceSession].
+ *
+ * SDK 0.9 consolidated streaming under `Camera`: `DeviceSession.addCamera(config)` returns a
+ * `Camera` that owns the hardware resource and exposes its `stream` child. Stopping the camera
+ * cascades to the stream.
+ */
+object CameraSessionManager {
     private val logger = EMWDATLogger
 
-    // Active streams keyed by sessionId
+    // Active cameras keyed by sessionId
+    private val cameras: MutableMap<String, Camera> = mutableMapOf()
     private val streams: MutableMap<String, Stream> = mutableMapOf()
     private val videoJobs: MutableMap<String, Job> = mutableMapOf()
     private val stateJobs: MutableMap<String, Job> = mutableMapOf()
+    private val cameraStateJobs: MutableMap<String, Job> = mutableMapOf()
     private val errorJobs: MutableMap<String, Job> = mutableMapOf()
 
     private var scope: CoroutineScope? = null
@@ -58,11 +72,15 @@ object StreamSessionManager {
         this.frameCallbackOwner = null
     }
 
-    // MARK: - Stream Capability Control
+    // MARK: - Camera Capability Control
 
-    fun addStreamToSession(sessionId: String, config: Map<String, Any>) {
+    fun addCameraToSession(sessionId: String, config: Map<String, Any>) {
         val session = WearablesManager.getSession(sessionId)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
+
+        if (cameras.containsKey(sessionId)) {
+            throw IllegalStateException("Camera already added to session: $sessionId")
+        }
 
         val videoQuality = when (config["resolution"] as? String) {
             "high" -> VideoQuality.HIGH
@@ -70,21 +88,37 @@ object StreamSessionManager {
             else -> VideoQuality.LOW
         }
         val frameRate = (config["frameRate"] as? Number)?.toInt() ?: 15
-        val compressVideo = config["compressVideo"] as? Boolean ?: false
+        val compressVideo = config["compressVideo"] as? Boolean
+            ?: ((config["videoCodec"] as? String) == "hvc1")
 
         val streamConfig = StreamConfiguration(videoQuality, frameRate, compressVideo)
 
-        logger.info("StreamSession", "Adding stream to session", mapOf(
+        logger.info("Camera", "Adding camera to session", mapOf(
             "sessionId" to sessionId,
             "quality" to videoQuality.toString(),
             "frameRate" to frameRate,
             "compressVideo" to compressVideo
         ))
 
-        val stream = session.addStream(streamConfig)
+        val currentScope = scope ?: throw IllegalStateException("Module scope not available")
+
+        val camera = session.addCamera(streamConfig).fold(
+            onSuccess = { it },
+            onFailure = { error, _ ->
+                throw IllegalStateException("Failed to add camera: ${error.description}")
+            }
+        )
+        cameras[sessionId] = camera
+
+        val stream = camera.stream
         streams[sessionId] = stream
 
-        val currentScope = scope ?: throw IllegalStateException("Module scope not available")
+        // Collect camera lifecycle
+        cameraStateJobs[sessionId] = currentScope.launch {
+            camera.state.collect { state ->
+                handleCameraStateChange(sessionId, state)
+            }
+        }
 
         // Collect video frames
         videoJobs[sessionId] = currentScope.launch {
@@ -103,12 +137,23 @@ object StreamSessionManager {
         // Collect errors
         errorJobs[sessionId] = currentScope.launch {
             stream.errorStream.collect { error ->
-                logger.error("StreamSession", "Stream error", mapOf(
+                logger.error("Camera", "Stream error", mapOf(
                     "sessionId" to sessionId,
-                    "error" to error.toString()
+                    "error" to error.description
                 ))
-                emitEvent("onStreamError", mapOf("type" to "internalError"))
+                emitEvent("onStreamError", mapOf("type" to mapStreamError(error)))
             }
+        }
+
+        // Start the stream — explicit since SDK 0.7
+        stream.start().onFailure { error, _ ->
+            logger.error("Camera", "Failed to start stream", mapOf(
+                "sessionId" to sessionId,
+                "error" to error.description
+            ))
+            camera.stop()
+            destroySession(sessionId)
+            throw IllegalStateException("Failed to start stream: ${error.description}")
         }
 
         // Emit capability state
@@ -117,42 +162,43 @@ object StreamSessionManager {
             "state" to "active"
         ))
 
-        logger.info("StreamSession", "Stream added to session", mapOf("sessionId" to sessionId))
+        logger.info("Camera", "Camera added to session", mapOf("sessionId" to sessionId))
     }
 
-    fun removeStreamFromSession(sessionId: String) {
-        val session = WearablesManager.getSession(sessionId)
-        session?.removeStream()
-        destroyStream(sessionId)
+    fun removeCameraFromSession(sessionId: String) {
+        // Stopping the camera cascades to its stream child.
+        cameras[sessionId]?.stop()
+        WearablesManager.getSession(sessionId)?.removeCamera()
+        destroySession(sessionId)
 
         emitEvent("onCapabilityStateChange", mapOf(
             "sessionId" to sessionId,
             "state" to "stopped"
         ))
 
-        logger.info("StreamSession", "Stream removed from session", mapOf("sessionId" to sessionId))
+        logger.info("Camera", "Camera removed from session", mapOf("sessionId" to sessionId))
     }
 
     suspend fun capturePhoto(context: Context, format: String) {
         // Find the first active stream
         val stream = streams.values.firstOrNull()
-            ?: throw Exception("No active stream session")
+            ?: throw Exception("No active camera stream")
 
-        logger.info("StreamSession", "Capturing photo", mapOf("requestedFormat" to format))
+        logger.info("Camera", "Capturing photo", mapOf("requestedFormat" to format))
         val result = stream.capturePhoto()
 
         result.fold(
             onSuccess = { photoData ->
                 handlePhotoCapture(context, photoData, format)
             },
-            onFailure = { error ->
+            onFailure = { error, _ ->
                 val msg = when (error) {
                     is CaptureError.DeviceDisconnected -> "Device disconnected"
                     is CaptureError.NotStreaming -> "Not streaming"
                     is CaptureError.CaptureInProgress -> "Capture already in progress"
                     is CaptureError.CaptureFailed -> "Capture failed"
                 }
-                logger.error("StreamSession", "Photo capture failed", mapOf("error" to msg))
+                logger.error("Camera", "Photo capture failed", mapOf("error" to msg))
                 throw Exception("Photo capture failed: $msg")
             }
         )
@@ -161,13 +207,14 @@ object StreamSessionManager {
     // MARK: - Frame Handling
 
     private fun handleVideoFrame(sessionId: String, videoFrame: VideoFrame) {
-        // If frame is compressed HEVC, emit metadata only (can't decode to bitmap)
+        // If frame is compressed HEVC, emit metadata only (can't decode to bitmap here)
         if (videoFrame.isCompressed) {
             emitEvent("onVideoFrame", mapOf(
                 "timestamp" to System.currentTimeMillis(),
                 "width" to videoFrame.width,
                 "height" to videoFrame.height,
-                "isCompressed" to true
+                "isCompressed" to true,
+                "isCodecConfig" to videoFrame.isCodecConfig
             ))
             return
         }
@@ -196,7 +243,8 @@ object StreamSessionManager {
             "timestamp" to System.currentTimeMillis(),
             "width" to videoFrame.width,
             "height" to videoFrame.height,
-            "isCompressed" to false
+            "isCompressed" to false,
+            "isCodecConfig" to false
         ))
     }
 
@@ -218,14 +266,30 @@ object StreamSessionManager {
 
     // MARK: - State Handling
 
-    private fun handleStateChange(sessionId: String, state: StreamSessionState) {
+    private fun handleStateChange(sessionId: String, state: StreamState) {
         val mapped = mapStreamState(state)
-        logger.info("StreamSession", "State changed", mapOf(
+        logger.info("Camera", "Stream state changed", mapOf(
             "sessionId" to sessionId,
             "state" to mapped
         ))
 
-        emitEvent("onStreamStateChange", mapOf("state" to mapped))
+        emitEvent("onStreamStateChange", mapOf(
+            "sessionId" to sessionId,
+            "state" to mapped
+        ))
+    }
+
+    private fun handleCameraStateChange(sessionId: String, state: CameraState) {
+        val mapped = mapCameraState(state)
+        logger.info("Camera", "Camera state changed", mapOf(
+            "sessionId" to sessionId,
+            "state" to mapped
+        ))
+
+        emitEvent("onCameraStateChange", mapOf(
+            "sessionId" to sessionId,
+            "state" to mapped
+        ))
     }
 
     // MARK: - Photo Handling
@@ -241,7 +305,7 @@ object StreamSessionManager {
                 file.outputStream().use { out ->
                     photoData.bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
                 }
-                logger.info("StreamSession", "Photo saved (Bitmap→JPEG)", mapOf("path" to file.absolutePath))
+                logger.info("Camera", "Photo saved (Bitmap→JPEG)", mapOf("path" to file.absolutePath))
 
                 emitEvent("onPhotoCaptured", mapOf(
                     "filePath" to file.absolutePath,
@@ -267,7 +331,7 @@ object StreamSessionManager {
                         file.outputStream().use { out ->
                             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
                         }
-                        logger.info("StreamSession", "Photo saved (HEIC→JPEG)", mapOf("path" to file.absolutePath))
+                        logger.info("Camera", "Photo saved (HEIC→JPEG)", mapOf("path" to file.absolutePath))
 
                         emitEvent("onPhotoCaptured", mapOf(
                             "filePath" to file.absolutePath,
@@ -278,14 +342,14 @@ object StreamSessionManager {
                         ))
                         return
                     }
-                    logger.warn("StreamSession", "HEIC→JPEG conversion failed, saving as HEIC")
+                    logger.warn("Camera", "HEIC→JPEG conversion failed, saving as HEIC")
                 }
 
                 // Save as HEIC (default or conversion failed)
                 val filename = "emwdat_photo_${timestamp}.heic"
                 val file = File(tempDir, filename)
                 file.writeBytes(bytes)
-                logger.info("StreamSession", "Photo saved (HEIC)", mapOf("path" to file.absolutePath))
+                logger.info("Camera", "Photo saved (HEIC)", mapOf("path" to file.absolutePath))
 
                 // Try to get dimensions from EXIF
                 var width = 0
@@ -295,7 +359,7 @@ object StreamSessionManager {
                     width = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0)
                     height = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
                 } catch (e: Exception) {
-                    logger.warn("StreamSession", "Could not read HEIC EXIF", mapOf("error" to e.toString()))
+                    logger.warn("Camera", "Could not read HEIC EXIF", mapOf("error" to e.toString()))
                 }
 
                 val payload = mutableMapOf<String, Any>(
@@ -309,39 +373,56 @@ object StreamSessionManager {
                 }
                 emitEvent("onPhotoCaptured", payload)
             }
-            else -> {
-                logger.warn("StreamSession", "Unknown PhotoData type")
-            }
         }
     }
 
     // MARK: - Mapping Helpers
 
-    private fun mapStreamState(state: StreamSessionState): String = when (state) {
-        StreamSessionState.STOPPED -> "stopped"
-        StreamSessionState.STARTING -> "starting"
-        StreamSessionState.STARTED -> "starting"
-        StreamSessionState.STREAMING -> "streaming"
-        StreamSessionState.STOPPING -> "stopping"
-        StreamSessionState.CLOSED -> "stopped"
+    private fun mapStreamState(state: StreamState): String = when (state) {
+        StreamState.STARTING -> "starting"
+        StreamState.STARTED -> "started"
+        StreamState.STREAMING -> "streaming"
+        StreamState.PAUSED -> "paused"
+        StreamState.STOPPING -> "stopping"
+        StreamState.STOPPED -> "stopped"
+        StreamState.CLOSED -> "closed"
+    }
+
+    private fun mapCameraState(state: CameraState): String = when (state) {
+        CameraState.STARTING -> "starting"
+        CameraState.STARTED -> "started"
+        CameraState.STOPPING -> "stopping"
+        CameraState.STOPPED -> "stopped"
+    }
+
+    private fun mapStreamError(error: StreamError): String = when (error) {
+        StreamError.STREAM_ERROR -> "videoStreamingError"
+        StreamError.CRITICAL_STREAM_ERROR -> "criticalStreamError"
+        StreamError.HINGE_CLOSED -> "hingesClosed"
+        StreamError.PERMISSIONS_DENIED -> "permissionDenied"
+        StreamError.THERMAL_HOT -> "thermalHot"
+        StreamError.BATTERY_LOW -> "batteryLow"
+        StreamError.PEAK_POWER_LIMIT -> "peakPowerLimit"
+        StreamError.TIMEOUT -> "timeout"
     }
 
     // MARK: - Cleanup
 
-    private fun destroyStream(sessionId: String) {
-        videoJobs[sessionId]?.cancel()
-        videoJobs.remove(sessionId)
-        stateJobs[sessionId]?.cancel()
-        stateJobs.remove(sessionId)
-        errorJobs[sessionId]?.cancel()
-        errorJobs.remove(sessionId)
+    /** Cancel collectors and drop references for a session's camera. */
+    fun destroySession(sessionId: String) {
+        videoJobs.remove(sessionId)?.cancel()
+        stateJobs.remove(sessionId)?.cancel()
+        cameraStateJobs.remove(sessionId)?.cancel()
+        errorJobs.remove(sessionId)?.cancel()
         streams.remove(sessionId)
-        logger.debug("StreamSession", "Stream destroyed", mapOf("sessionId" to sessionId))
+        cameras.remove(sessionId)
+        logger.debug("Camera", "Camera destroyed", mapOf("sessionId" to sessionId))
     }
 
     fun destroy() {
-        for (sessionId in streams.keys.toList()) {
-            destroyStream(sessionId)
+        for (sessionId in cameras.keys.toList()) {
+            cameras[sessionId]?.stop()
+            destroySession(sessionId)
         }
     }
 

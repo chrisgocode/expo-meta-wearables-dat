@@ -36,7 +36,7 @@ config.resolver.nodeModulesPaths = [
 
 // Force react and react-native to resolve from example's node_modules
 config.resolver.extraNodeModules = {
-  "expo-meta-wearables-dat": monorepoRoot,
+  "@chrisgocode/expo-meta-wearables-dat": monorepoRoot,
   react: path.resolve(__dirname, "node_modules", "react"),
   "react-native": path.resolve(__dirname, "node_modules", "react-native"),
 };

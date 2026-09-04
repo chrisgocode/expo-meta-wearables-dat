@@ -6,7 +6,7 @@ module.exports = async (env, argv) => {
     {
       ...env,
       babel: {
-        dangerouslyAddModulePathsToTranspile: ["expo-meta-wearables-dat"],
+        dangerouslyAddModulePathsToTranspile: ["@chrisgocode/expo-meta-wearables-dat"],
       },
     },
     argv

@@ -19,7 +19,11 @@ type EMWDATPluginProps = {
   bluetoothUsageDescription?: string;
   /** GitHub token for accessing Meta Wearables Maven packages. Falls back to GITHUB_TOKEN env var. */
   githubToken?: string;
+  /** Opt out of DAT SDK crash reporting (SDK 0.9+). Default: false. */
+  crashReportingOptOut?: boolean;
 };
+
+const EMBED_PHASE_NAME = "Embed MWDAT Frameworks";
 
 function addUniqueStringToArray(plist: Record<string, any>, key: string, value: string): void {
   const arr: string[] = plist[key] ?? [];
@@ -48,9 +52,9 @@ const withEMWDAT: ConfigPlugin<EMWDATPluginProps> = (config, props) => {
   // iOS Configuration
   // =========================================================================
 
-  // Set iOS deployment target to 16.0 (required by Meta Wearables DAT SDK)
+  // Set iOS deployment target to 17.2 (required by Meta Wearables DAT SDK 0.9+)
   config = withPodfileProperties(config, (config) => {
-    config.modResults["ios.deploymentTarget"] = "16.0";
+    config.modResults["ios.deploymentTarget"] = "17.2";
     return config;
   });
 
@@ -63,7 +67,7 @@ const withEMWDAT: ConfigPlugin<EMWDATPluginProps> = (config, props) => {
     for (const key in configurations) {
       const buildSettings = configurations[key].buildSettings;
       if (buildSettings?.PRODUCT_BUNDLE_IDENTIFIER) {
-        buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "16.0";
+        buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "17.2";
       }
     }
 
@@ -86,7 +90,20 @@ for fw in "\${FRAMEWORKS[@]}"; do
 done
 `.trim();
 
-    project.addBuildPhase([], "PBXShellScriptBuildPhase", "Embed MWDAT Frameworks", target, {
+    // Idempotent: `expo prebuild` without `--clean` re-runs this mod against the existing
+    // project. Adding the phase again yields "Multiple commands produce ...framework".
+    const shellScriptPhases = project.hash?.project?.objects?.PBXShellScriptBuildPhase ?? {};
+    const alreadyEmbedded = Object.entries(shellScriptPhases).some(
+      ([key, phase]: [string, any]) =>
+        !key.endsWith("_comment") &&
+        typeof phase === "object" &&
+        String(phase?.name ?? "").replace(/"/g, "") === EMBED_PHASE_NAME
+    );
+    if (alreadyEmbedded) {
+      return config;
+    }
+
+    project.addBuildPhase([], "PBXShellScriptBuildPhase", EMBED_PHASE_NAME, target, {
       shellPath: "/bin/sh",
       shellScript,
       inputPaths: [
@@ -137,7 +154,10 @@ done
     if (props.clientToken) {
       mwdatConfig.ClientToken = props.clientToken;
     }
-    plist.MWDAT = mwdatConfig;
+    plist.MWDAT = props.crashReportingOptOut
+      ? // SDK 0.9+: MWDAT > CrashReporting > OptOut
+        { ...mwdatConfig, CrashReporting: { OptOut: true } }
+      : mwdatConfig;
 
     return config;
   });
@@ -232,6 +252,19 @@ done
           $: {
             "android:name": clientTokenKey,
             "android:value": props.clientToken,
+          },
+        });
+      }
+    }
+
+    // Crash-reporting opt-out (SDK 0.9+)
+    if (props.crashReportingOptOut) {
+      const optOutKey = "com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT";
+      if (!metaData.some((m: any) => m.$?.["android:name"] === optOutKey)) {
+        metaData.push({
+          $: {
+            "android:name": optOutKey,
+            "android:value": "true",
           },
         });
       }

@@ -17,9 +17,9 @@ Pod::Spec.new do |s|
   s.license        = package['license']
   s.author         = package['author']
   s.homepage       = package['homepage']
-  s.platforms      = { :ios => '16.0' }
+  s.platforms      = { :ios => '17.2' }
   s.swift_version  = '5.9'
-  s.source         = { git: 'https://github.com/circus-kitchens/expo-meta-wearables-dat' }
+  s.source         = { git: 'https://github.com/chrisgocode/expo-meta-wearables-dat' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
@@ -27,7 +27,7 @@ Pod::Spec.new do |s|
   # Meta Wearables DAT SDK via Swift Package Manager
   spm_dependency(s,
     url: 'https://github.com/facebook/meta-wearables-dat-ios',
-    requirement: { kind: 'upToNextMinorVersion', minimumVersion: '0.6.0' },
+    requirement: { kind: 'upToNextMinorVersion', minimumVersion: '0.9.0' },
     products: ['MWDATCore', 'MWDATCamera', 'MWDATMockDevice']
   )
 

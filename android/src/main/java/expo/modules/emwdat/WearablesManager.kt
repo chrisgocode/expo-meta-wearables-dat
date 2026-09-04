@@ -3,18 +3,19 @@ package expo.modules.emwdat
 import android.app.Activity
 import android.content.Context
 import com.meta.wearable.dat.core.Wearables
-import com.meta.wearable.dat.core.session.DeviceSessionState
-import com.meta.wearable.dat.core.session.Session
-import com.meta.wearable.dat.core.session.SessionError
 import com.meta.wearable.dat.core.selectors.AutoDeviceSelector
 import com.meta.wearable.dat.core.selectors.SpecificDeviceSelector
+import com.meta.wearable.dat.core.session.DeviceSession
+import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.DeviceCompatibility
 import com.meta.wearable.dat.core.types.DeviceIdentifier
+import com.meta.wearable.dat.core.types.DeviceSessionError
 import com.meta.wearable.dat.core.types.DeviceType
 import com.meta.wearable.dat.core.types.LinkState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.core.types.RegistrationState
+import com.meta.wearable.dat.core.types.ThermalLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -33,11 +34,13 @@ object WearablesManager {
 
     // Flow collection jobs
     private var registrationJob: Job? = null
+    private var registrationErrorJob: Job? = null
     private var devicesJob: Job? = null
     private var deviceMetadataJobs: MutableMap<DeviceIdentifier, Job> = mutableMapOf()
+    private var deviceStateJobs: MutableMap<DeviceIdentifier, Job> = mutableMapOf()
 
     // Device sessions
-    private val sessions: MutableMap<String, Session> = mutableMapOf()
+    private val sessions: MutableMap<String, DeviceSession> = mutableMapOf()
     private val sessionStateJobs: MutableMap<String, Job> = mutableMapOf()
     private val sessionErrorJobs: MutableMap<String, Job> = mutableMapOf()
 
@@ -49,6 +52,7 @@ object WearablesManager {
     private var deviceCompatibilities: MutableMap<DeviceIdentifier, DeviceCompatibility> = mutableMapOf()
     private var deviceLinkStates: MutableMap<DeviceIdentifier, LinkState> = mutableMapOf()
     private var deviceTypes: MutableMap<DeviceIdentifier, DeviceType> = mutableMapOf()
+    private var deviceDisplaySupport: MutableMap<DeviceIdentifier, Boolean> = mutableMapOf()
 
     fun setEventEmitter(emitter: EventEmitter) {
         logger.debug("Manager", "Event emitter set")
@@ -66,7 +70,12 @@ object WearablesManager {
         }
 
         logger.info("Manager", "Configuring SDK")
-        Wearables.initialize(context)
+        // Wearables.initialize returns DatResult since SDK 0.7 — ALREADY_INITIALIZED is benign.
+        Wearables.initialize(context).onFailure { error, _ ->
+            logger.warn("Manager", "Wearables.initialize reported an error", mapOf(
+                "error" to error.description
+            ))
+        }
         isConfigured = true
 
         setupListeners()
@@ -79,6 +88,13 @@ object WearablesManager {
         registrationJob = scope.launch {
             Wearables.registrationState.collect { state ->
                 handleRegistrationStateChange(state)
+            }
+        }
+
+        // Registration errors moved out of RegistrationState into their own stream in SDK 0.7.
+        registrationErrorJob = scope.launch {
+            Wearables.registrationErrorStream.collect { error ->
+                logger.error("Manager", "Registration error", mapOf("error" to error.description))
             }
         }
 
@@ -111,12 +127,13 @@ object WearablesManager {
 
         // Remove metadata jobs for removed devices
         for (deviceId in removedDevices) {
-            deviceMetadataJobs[deviceId]?.cancel()
-            deviceMetadataJobs.remove(deviceId)
+            deviceMetadataJobs.remove(deviceId)?.cancel()
+            deviceStateJobs.remove(deviceId)?.cancel()
             deviceNames.remove(deviceId)
             deviceCompatibilities.remove(deviceId)
             deviceLinkStates.remove(deviceId)
             deviceTypes.remove(deviceId)
+            deviceDisplaySupport.remove(deviceId)
             logger.debug("Manager", "Removed device listeners", mapOf("deviceId" to deviceId.toString()))
         }
 
@@ -129,6 +146,7 @@ object WearablesManager {
                     metadataFlow.collect { metadata ->
                         deviceNames[deviceId] = metadata.name
                         deviceCompatibilities[deviceId] = metadata.compatibility
+                        deviceDisplaySupport[deviceId] = metadata.isDisplayCapable()
 
                         // Track link state
                         val previousLinkState = deviceLinkStates[deviceId]
@@ -151,6 +169,16 @@ object WearablesManager {
                         // Re-emit full device list
                         emitDeviceList()
                     }
+                }
+            }
+
+            // Live device state (thermal level) — SDK 0.7+
+            deviceStateJobs[deviceId] = currentScope.launch {
+                Wearables.getDeviceState(deviceId).collect { state ->
+                    emitEvent("onDeviceStateChange", mapOf(
+                        "deviceId" to deviceId.toString(),
+                        "thermalLevel" to mapThermalLevel(state.thermalLevel)
+                    ))
                 }
             }
 
@@ -182,7 +210,13 @@ object WearablesManager {
             AutoDeviceSelector()
         }
 
-        val session = Wearables.createSession(deviceSelector)
+        val session = Wearables.createSession(deviceSelector).fold(
+            onSuccess = { it },
+            onFailure = { error, _ ->
+                throw IllegalStateException("Failed to create session: ${error.description}")
+            }
+        )
+
         val sessionId = UUID.randomUUID().toString()
         sessions[sessionId] = session
 
@@ -219,13 +253,11 @@ object WearablesManager {
         session.stop()
     }
 
-    fun getSession(sessionId: String): Session? = sessions[sessionId]
+    fun getSession(sessionId: String): DeviceSession? = sessions[sessionId]
 
     fun removeSession(sessionId: String) {
-        sessionStateJobs[sessionId]?.cancel()
-        sessionStateJobs.remove(sessionId)
-        sessionErrorJobs[sessionId]?.cancel()
-        sessionErrorJobs.remove(sessionId)
+        sessionStateJobs.remove(sessionId)?.cancel()
+        sessionErrorJobs.remove(sessionId)?.cancel()
         sessions.remove(sessionId)
         logger.info("Manager", "Session removed", mapOf("sessionId" to sessionId))
     }
@@ -244,12 +276,13 @@ object WearablesManager {
 
         // Auto-clean stopped sessions
         if (state == DeviceSessionState.STOPPED) {
+            CameraSessionManager.destroySession(sessionId)
             removeSession(sessionId)
         }
     }
 
-    private fun handleSessionError(sessionId: String, error: SessionError) {
-        val mapped = mapSessionError(error)
+    private fun handleSessionError(sessionId: String, error: DeviceSessionError) {
+        val mapped = mapDeviceSessionError(error)
         logger.error("Manager", "Session error", mapOf(
             "sessionId" to sessionId,
             "error" to mapped
@@ -258,7 +291,7 @@ object WearablesManager {
         emitEvent("onDeviceSessionError", mapOf(
             "sessionId" to sessionId,
             "error" to mapped,
-            "message" to error.toString()
+            "message" to error.description
         ))
     }
 
@@ -278,6 +311,26 @@ object WearablesManager {
         }
         logger.info("Manager", "Starting unregistration")
         Wearables.startUnregistration(activity)
+    }
+
+    // MARK: - Navigation (SDK 0.7+)
+
+    fun openFirmwareUpdate(activity: Activity) {
+        if (!isConfigured) {
+            throw IllegalStateException("Wearables SDK has not been configured. Call configure() first.")
+        }
+        Wearables.openFirmwareUpdate(activity).onFailure { error, _ ->
+            throw IllegalStateException(error.description)
+        }
+    }
+
+    fun openDATGlassesAppUpdate(activity: Activity) {
+        if (!isConfigured) {
+            throw IllegalStateException("Wearables SDK has not been configured. Call configure() first.")
+        }
+        Wearables.openDATGlassesAppUpdate(activity).onFailure { error, _ ->
+            throw IllegalStateException(error.description)
+        }
     }
 
     // MARK: - Permissions
@@ -358,7 +411,8 @@ object WearablesManager {
             "name" to (deviceNames[id] ?: "Unknown"),
             "linkState" to mapLinkState(deviceLinkStates[id] ?: LinkState.DISCONNECTED),
             "deviceType" to mapDeviceType(deviceTypes[id]),
-            "compatibility" to mapCompatibility(deviceCompatibilities[id] ?: DeviceCompatibility.UNDEFINED)
+            "compatibility" to mapCompatibility(deviceCompatibilities[id] ?: DeviceCompatibility.UNDEFINED),
+            "supportsDisplay" to (deviceDisplaySupport[id] ?: false)
         )
     }
 
@@ -370,19 +424,18 @@ object WearablesManager {
         LinkState.DISCONNECTED -> "disconnected"
     }
 
+    // RegistrationState became a plain enum in SDK 0.7.
     private fun mapRegistrationState(state: RegistrationState): String = when (state) {
-        is RegistrationState.Unavailable -> "unavailable"
-        is RegistrationState.Available -> "available"
-        is RegistrationState.Registering -> "registering"
-        is RegistrationState.Registered -> "registered"
-        is RegistrationState.Unregistering -> "unavailable"
-        else -> "unavailable"
+        RegistrationState.UNAVAILABLE -> "unavailable"
+        RegistrationState.AVAILABLE -> "available"
+        RegistrationState.REGISTERING -> "registering"
+        RegistrationState.REGISTERED -> "registered"
+        RegistrationState.UNREGISTERING -> "unregistering"
     }
 
     private fun mapPermissionStatus(status: PermissionStatus): String = when (status) {
         is PermissionStatus.Granted -> "granted"
         is PermissionStatus.Denied -> "denied"
-        else -> "denied"
     }
 
     private fun mapCompatibility(compat: DeviceCompatibility): String = when (compat) {
@@ -398,9 +451,20 @@ object WearablesManager {
         DeviceType.OAKLEY_META_VANGUARD -> "oakleyMetaVanguard"
         DeviceType.META_RAYBAN_DISPLAY -> "metaRayBanDisplay"
         DeviceType.RAYBAN_META_OPTICS -> "rayBanMetaOptics"
+        DeviceType.META_GLASSES -> "metaGlasses"
         DeviceType.UNKNOWN -> "unknown"
         null -> "unknown"
-        else -> "unknown"
+    }
+
+    private fun mapThermalLevel(level: ThermalLevel): String = when (level) {
+        ThermalLevel.UNKNOWN -> "unknown"
+        ThermalLevel.NONE -> "none"
+        ThermalLevel.LIGHT -> "light"
+        ThermalLevel.MODERATE -> "moderate"
+        ThermalLevel.SEVERE -> "severe"
+        ThermalLevel.CRITICAL -> "critical"
+        ThermalLevel.EMERGENCY -> "emergency"
+        ThermalLevel.SHUTDOWN -> "shutdown"
     }
 
     private fun mapDeviceSessionState(state: DeviceSessionState): String = when (state) {
@@ -412,10 +476,23 @@ object WearablesManager {
         DeviceSessionState.STOPPED -> "stopped"
     }
 
-    private fun mapSessionError(error: SessionError): String = when (error) {
-        SessionError.DEVICE_DISCONNECTED -> "noEligibleDevice"
-        SessionError.DEVICE_POWERED_OFF -> "noEligibleDevice"
-        else -> "unexpectedError"
+    private fun mapDeviceSessionError(error: DeviceSessionError): String = when (error) {
+        DeviceSessionError.NO_ELIGIBLE_DEVICE -> "noEligibleDevice"
+        DeviceSessionError.SESSION_ALREADY_STOPPED -> "sessionAlreadyStopped"
+        DeviceSessionError.SESSION_ALREADY_EXISTS -> "sessionAlreadyExists"
+        DeviceSessionError.SESSION_IDLE -> "sessionIdle"
+        DeviceSessionError.CAPABILITY_ALREADY_ADDED -> "capabilityAlreadyActive"
+        DeviceSessionError.CAPABILITY_NOT_FOUND -> "capabilityNotFound"
+        DeviceSessionError.CAPABILITY_DENIED -> "capabilityDenied"
+        DeviceSessionError.DEVICE_DISCONNECTED -> "deviceDisconnected"
+        DeviceSessionError.SESSION_ENDED_BY_DEVICE -> "sessionEndedByDevice"
+        DeviceSessionError.THERMAL_CRITICAL -> "thermalCritical"
+        DeviceSessionError.THERMAL_EMERGENCY -> "thermalEmergency"
+        DeviceSessionError.PEAK_POWER_SHUTDOWN -> "peakPowerShutdown"
+        DeviceSessionError.BATTERY_CRITICAL -> "batteryCritical"
+        DeviceSessionError.DAT_APP_ON_THE_GLASSES_UPDATE_REQUIRED -> "datAppOnTheGlassesUpdateRequired"
+        DeviceSessionError.DWA_UNAVAILABLE -> "dwaUnavailable"
+        DeviceSessionError.UNEXPECTED_ERROR -> "unexpectedError"
     }
 
     // MARK: - Event Emission
@@ -430,9 +507,12 @@ object WearablesManager {
     fun cleanup() {
         logger.info("Manager", "Cleaning up listeners")
         registrationJob?.cancel()
+        registrationErrorJob?.cancel()
         devicesJob?.cancel()
         deviceMetadataJobs.values.forEach { it.cancel() }
         deviceMetadataJobs.clear()
+        deviceStateJobs.values.forEach { it.cancel() }
+        deviceStateJobs.clear()
         sessionStateJobs.values.forEach { it.cancel() }
         sessionStateJobs.clear()
         sessionErrorJobs.values.forEach { it.cancel() }
@@ -442,6 +522,7 @@ object WearablesManager {
         deviceCompatibilities.clear()
         deviceLinkStates.clear()
         deviceTypes.clear()
+        deviceDisplaySupport.clear()
         currentDevices = emptySet()
         currentRegistrationState = "unavailable"
         isConfigured = false

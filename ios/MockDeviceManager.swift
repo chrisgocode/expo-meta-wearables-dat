@@ -11,8 +11,8 @@ public final class MockDeviceManager {
 
     private let logger = EMWDATLogger.shared
 
-    /// Map of deviceIdentifier → MockRaybanMeta instance
-    private var devices: [String: any MockRaybanMeta] = [:]
+    /// Map of deviceIdentifier → MockGlasses instance
+    private var devices: [String: any MockGlasses] = [:]
 
     private init() {}
 
@@ -42,11 +42,11 @@ public final class MockDeviceManager {
 
     // MARK: - Pair / Unpair
 
-    public func pairMockDevice() -> String {
-        let device = MockDeviceKit.shared.pairRaybanMeta()
+    public func pairMockDevice(model: String = "rayBanMeta") throws -> String {
+        let device = try MockDeviceKit.shared.pairGlasses(model: mapGlassesModel(model))
         let id = "\(device.deviceIdentifier)"
         devices[id] = device
-        logger.info("MockDeviceManager", "Paired mock device", context: ["id": id])
+        logger.info("MockDeviceManager", "Paired mock device", context: ["id": id, "model": model])
         return id
     }
 
@@ -93,7 +93,7 @@ public final class MockDeviceManager {
         try getDevice(id).unfold()
     }
 
-    // MARK: - Camera (file-based — now synchronous in SDK 0.6)
+    // MARK: - Camera (file-based — synchronous since SDK 0.6)
 
     public func setCameraFeed(id: String, fileURL: URL) throws {
         let camera = try getDevice(id).services.camera
@@ -105,12 +105,22 @@ public final class MockDeviceManager {
         camera.setCapturedImage(fileURL: fileURL)
     }
 
-    // MARK: - Camera (phone camera — new in SDK 0.6)
+    // MARK: - Camera (phone camera — synchronous since SDK 0.9)
 
-    public func setCameraFeedFromCamera(id: String, facing: String) async throws {
+    public func setCameraFeedFromCamera(id: String, facing: String) throws {
         let camera = try getDevice(id).services.camera
         let cameraFacing: CameraFacing = facing == "back" ? .back : .front
-        await camera.setCameraFeed(cameraFacing: cameraFacing)
+        camera.setCameraFeed(cameraFacing: cameraFacing)
+    }
+
+    // MARK: - Captouch (SDK 0.7+)
+
+    public func tap(id: String) throws {
+        try getDevice(id).services.captouch.tap()
+    }
+
+    public func tapAndHold(id: String) throws {
+        try getDevice(id).services.captouch.tapAndHold()
     }
 
     // MARK: - Permissions
@@ -137,7 +147,17 @@ public final class MockDeviceManager {
 
     // MARK: - Helpers
 
-    private func getDevice(_ id: String) throws -> any MockRaybanMeta {
+    private func mapGlassesModel(_ model: String) -> GlassesModel {
+        switch model {
+        case "oakleyMetaHSTN": return .oakleyMetaHSTN
+        case "oakleyMetaVanguard": return .oakleyMetaVanguard
+        case "rayBanMetaOptics": return .rayBanMetaOptics
+        case "metaGlasses": return .metaGlasses
+        default: return .rayBanMeta
+        }
+    }
+
+    private func getDevice(_ id: String) throws -> any MockGlasses {
         guard let device = devices[id] else {
             throw MockDeviceManagerError.deviceNotFound(id)
         }

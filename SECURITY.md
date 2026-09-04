@@ -4,8 +4,8 @@
 
 If you discover a security vulnerability, please report it responsibly:
 
-1. **GitHub Issues**: Open an issue at [github.com/circus-kitchens/expo-meta-wearables-dat/issues](https://github.com/circus-kitchens/expo-meta-wearables-dat/issues) with the label `security`.
-2. **Email**: Contact [fabricio_ext@circuskitchens.com](mailto:fabricio_ext@circuskitchens.com) directly for sensitive reports.
+1. **GitHub Issues**: Open an issue at [github.com/chrisgocode/expo-meta-wearables-dat/issues](https://github.com/chrisgocode/expo-meta-wearables-dat/issues) with the label `security`.
+2. **Email**: Contact [christian.gonzalez6137@gmail.com](mailto:christian.gonzalez6137@gmail.com) directly for sensitive reports.
 
 We will acknowledge reports within 48 hours and aim to release patches promptly.
 

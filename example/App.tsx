@@ -1,6 +1,4 @@
-import { Feather } from "@expo/vector-icons";
-import { File as ExpoFile } from "expo-file-system";
-import { useMetaWearables } from "expo-meta-wearables-dat";
+import { useMetaWearables } from "@chrisgocode/expo-meta-wearables-dat";
 import type {
   PhotoData,
   PhotoCaptureFormat,
@@ -8,8 +6,10 @@ import type {
   VideoCodec,
   DeviceIdentifier,
   LogLevel,
-  StreamSessionState,
-} from "expo-meta-wearables-dat";
+  StreamState,
+} from "@chrisgocode/expo-meta-wearables-dat";
+import { Feather } from "@expo/vector-icons";
+import { File as ExpoFile } from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -47,7 +47,7 @@ export default function App() {
   const [logLevel, setLogLevelState] = useState<LogLevel>("debug");
   const [eventLog, setEventLog] = useState<LogEntry[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [streamState, setStreamState] = useState<StreamSessionState>("stopped");
+  const [streamState, setStreamState] = useState<StreamState>("stopped");
 
   // Frame stats
   const [fps, setFps] = useState(0);
@@ -79,7 +79,7 @@ export default function App() {
     createSession,
     startSession,
     stopSession,
-    addStreamToSession,
+    addCameraToSession,
     capturePhoto,
   } = useMetaWearables({
     logLevel,
@@ -293,7 +293,7 @@ export default function App() {
               const sessionId = await createSession(selectedDeviceId ?? undefined);
               setCurrentSessionId(sessionId);
               await startSession(sessionId);
-              await addStreamToSession(sessionId, {
+              await addCameraToSession(sessionId, {
                 resolution,
                 frameRate,
                 videoCodec,

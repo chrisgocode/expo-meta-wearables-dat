@@ -41,12 +41,12 @@ public class EMWDATStreamView: ExpoView {
         Task { @MainActor in
             if active {
                 self.logger.info("StreamView", "Subscribing to frames", context: ["viewId": self.viewId.uuidString.prefix(8)])
-                StreamSessionManager.shared.setFrameCallback({ [weak self] image in
+                CameraSessionManager.shared.setFrameCallback({ [weak self] image in
                     self?.imageView.image = image
                 }, owner: self.viewId)
             } else {
                 self.logger.info("StreamView", "Unsubscribing from frames", context: ["viewId": self.viewId.uuidString.prefix(8)])
-                StreamSessionManager.shared.removeFrameCallback(owner: self.viewId)
+                CameraSessionManager.shared.removeFrameCallback(owner: self.viewId)
                 self.imageView.image = nil
             }
         }

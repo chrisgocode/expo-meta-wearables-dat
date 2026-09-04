@@ -1,11 +1,11 @@
-# expo-meta-wearables-dat
+# @chrisgocode/expo-meta-wearables-dat
 
-[![npm version](https://img.shields.io/npm/v/expo-meta-wearables-dat)](https://www.npmjs.com/package/expo-meta-wearables-dat)
-[![CI](https://github.com/circus-kitchens/expo-meta-wearables-dat/actions/workflows/ci.yml/badge.svg)](https://github.com/circus-kitchens/expo-meta-wearables-dat/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/expo-meta-wearables-dat)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/%40chrisgocode%2Fexpo-meta-wearables-dat)](https://www.npmjs.com/package/@chrisgocode/expo-meta-wearables-dat)
+[![CI](https://github.com/chrisgocode/expo-meta-wearables-dat/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisgocode/expo-meta-wearables-dat/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/%40chrisgocode%2Fexpo-meta-wearables-dat)](./LICENSE)
 ![platform: iOS | Android](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
 
-Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart glasses) into React Native apps. Provides device registration, permissions, session-based camera streaming, photo capture, and a React hook — bridged from the official Meta Wearables DAT SDK 0.6 on both iOS and Android.
+Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart glasses) into React Native apps. Provides device registration, permissions, session-based camera streaming, photo capture, and a React hook — bridged from the official Meta Wearables DAT SDK 0.9 on both iOS and Android.
 
 > **Official SDK docs:** [Meta Wearables DAT — Developer Documentation](https://wearables.developer.meta.com/docs/develop)
 >
@@ -36,37 +36,38 @@ Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart gl
 | ---------------- | -------- |
 | React Native     | 0.76+    |
 | Expo SDK         | 52+      |
-| iOS              | 16.0+    |
+| iOS              | 17.2+    |
 | Android          | API 31+  |
 | Xcode            | 16+      |
 | Swift            | 5.9+     |
-| DAT SDK          | 0.6      |
+| DAT SDK          | 0.9      |
 | New Architecture | Untested |
 
 ## Supported Devices
 
 - Ray-Ban Meta (verified)
 - Ray-Ban Meta Optics (untested)
-- Meta Ray-Ban Display (untested)
+- Meta Ray-Ban Display (untested — display capability is not wrapped by this module)
 - Oakley Meta HSTN / Vanguard (untested)
+- Meta Glasses (untested)
 
 ## Installation
 
 ```bash
-npx expo install expo-meta-wearables-dat
+npx expo install @chrisgocode/expo-meta-wearables-dat
 ```
 
 Or manually:
 
 ```bash
 # pnpm
-pnpm add expo-meta-wearables-dat
+pnpm add @chrisgocode/expo-meta-wearables-dat
 
 # yarn
-yarn add expo-meta-wearables-dat
+yarn add @chrisgocode/expo-meta-wearables-dat
 
 # npm
-npm install expo-meta-wearables-dat
+npm install @chrisgocode/expo-meta-wearables-dat
 ```
 
 ## Setup
@@ -79,7 +80,7 @@ Add the plugin to your `app.json` / `app.config.js`:
 {
   "plugins": [
     [
-      "expo-meta-wearables-dat",
+      "@chrisgocode/expo-meta-wearables-dat",
       {
         "urlScheme": "myapp",
         "metaAppId": "YOUR_META_APP_ID",
@@ -91,13 +92,14 @@ Add the plugin to your `app.json` / `app.config.js`:
 }
 ```
 
-| Prop                        | Required | Description                                                                                                   |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
-| `urlScheme`                 | Yes      | URL scheme for Meta AI app callback (e.g. `"myapp"`). Do not include `://` — only the scheme name             |
-| `metaAppId`                 | No       | Meta App ID from [Wearables Developer Center](https://wearables.developer.meta.com/). Omit for Developer Mode |
-| `clientToken`               | No       | Client Token from Wearables Developer Center                                                                  |
-| `bluetoothUsageDescription` | No       | Custom Bluetooth usage description (iOS only)                                                                 |
-| `githubToken`               | No       | GitHub token for Maven packages (Android). Falls back to `GITHUB_TOKEN` env var                               |
+| Prop                        | Required | Description                                                                                                                                                                   |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `urlScheme`                 | Yes      | URL scheme for Meta AI app callback (e.g. `"myapp"`). Do not include `://` — only the scheme name                                                                             |
+| `metaAppId`                 | No       | Meta App ID from [Wearables Developer Center](https://wearables.developer.meta.com/). Omit for Developer Mode                                                                 |
+| `clientToken`               | No       | Client Token from Wearables Developer Center                                                                                                                                  |
+| `bluetoothUsageDescription` | No       | Custom Bluetooth usage description (iOS only)                                                                                                                                 |
+| `githubToken`               | No       | GitHub token for Maven packages (Android). Falls back to `GITHUB_TOKEN` env var                                                                                               |
+| `crashReportingOptOut`      | No       | Opt out of DAT SDK crash reporting (SDK 0.9+). Writes `MWDAT > CrashReporting > OptOut` on iOS and the `com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT` meta-data on Android |
 
 ### iOS
 
@@ -109,10 +111,10 @@ The plugin automatically configures:
 - `UIBackgroundModes` (`bluetooth-peripheral`, `external-accessory`)
 - `NSBluetoothAlwaysUsageDescription`
 - `MWDAT` configuration dictionary (including `TeamID` auto-resolved from Xcode's `DEVELOPMENT_TEAM` signing setting)
-- iOS deployment target to 16.0
-- Embeds MWDATCamera & MWDATCore dynamic frameworks
+- iOS deployment target to 17.2
+- Embeds MWDATCamera, MWDATCore & MWDATMockDevice dynamic frameworks
 
-> **Note:** The native Meta Wearables DAT iOS SDK states iOS 17.0+ as its minimum. The podspec targets 16.0 and builds successfully, but runtime behavior on iOS 16 devices is unverified. We recommend iOS 17.0+ for production use.
+> **Note:** DAT SDK 0.9 raised the iOS minimum deployment target from 15.2 to 17.2; apps targeting older iOS versions can no longer link the SDK. The podspec and config plugin both target 17.2.
 
 ### Android
 
@@ -152,7 +154,7 @@ npx expo prebuild --clean
 
 ```tsx
 import { View, Button, Text } from "react-native";
-import { useMetaWearables, EMWDATStreamView } from "expo-meta-wearables-dat";
+import { useMetaWearables, EMWDATStreamView } from "@chrisgocode/expo-meta-wearables-dat";
 import { useState } from "react";
 
 export default function App() {
@@ -165,7 +167,7 @@ export default function App() {
     createSession,
     startSession,
     stopSession,
-    addStreamToSession,
+    addCameraToSession,
     capturePhoto,
   } = useMetaWearables({
     onPhotoCaptured: (photo) => console.log("Photo saved:", photo.filePath),
@@ -176,7 +178,7 @@ export default function App() {
     const id = await createSession();
     setSessionId(id);
     await startSession(id);
-    await addStreamToSession(id, { resolution: "medium", frameRate: 24 });
+    await addCameraToSession(id, { resolution: "medium", frameRate: 24 });
   };
 
   const handleStopStream = async () => {
@@ -230,17 +232,20 @@ React hook that manages the full lifecycle of Meta Wearables integration.
 
 **Returned state:**
 
-| Field                 | Type                                  | Description                  |
-| --------------------- | ------------------------------------- | ---------------------------- |
-| `isConfigured`        | `boolean`                             | SDK configured               |
-| `isConfiguring`       | `boolean`                             | `true` while configuring     |
-| `configError`         | `Error \| null`                       | Error from last `configure`  |
-| `registrationState`   | `RegistrationState`                   | Registration lifecycle state |
-| `permissionStatus`    | `PermissionStatus`                    | `"granted"` \| `"denied"`    |
-| `devices`             | `Device[]`                            | Connected devices            |
-| `deviceSessionStates` | `Record<string, DeviceSessionState>`  | Per-session states           |
-| `deviceSessionErrors` | `Record<string, { error, message? }>` | Per-session errors           |
-| `capabilityStates`    | `Record<string, CapabilityState>`     | Per-session capability state |
+| Field                 | Type                                  | Description                    |
+| --------------------- | ------------------------------------- | ------------------------------ |
+| `isConfigured`        | `boolean`                             | SDK configured                 |
+| `isConfiguring`       | `boolean`                             | `true` while configuring       |
+| `configError`         | `Error \| null`                       | Error from last `configure`    |
+| `registrationState`   | `RegistrationState`                   | Registration lifecycle state   |
+| `permissionStatus`    | `PermissionStatus`                    | `"granted"` \| `"denied"`      |
+| `devices`             | `Device[]`                            | Connected devices              |
+| `deviceStates`        | `Record<string, DeviceState>`         | Per-device thermal state       |
+| `deviceSessionStates` | `Record<string, DeviceSessionState>`  | Per-session states             |
+| `deviceSessionErrors` | `Record<string, { error, message? }>` | Per-session errors             |
+| `capabilityStates`    | `Record<string, CapabilityState>`     | Per-session capability state   |
+| `streamState`         | `StreamState`                         | Latest stream state            |
+| `cameraState`         | `CameraState`                         | Latest camera capability state |
 
 **Returned actions:**
 
@@ -257,14 +262,20 @@ React hook that manages the full lifecycle of Meta Wearables integration.
 | `createSession`                     | `(deviceId?) => Promise<string>`            | Create a device session            |
 | `startSession`                      | `(sessionId) => Promise<void>`              | Start a session                    |
 | `stopSession`                       | `(sessionId) => Promise<void>`              | Stop a session (terminal)          |
-| `addStreamToSession`                | `(sessionId, config?) => Promise<void>`     | Attach camera stream capability    |
-| `removeStreamFromSession`           | `(sessionId) => Promise<void>`              | Remove stream capability           |
+| `addCameraToSession`                | `(sessionId, config?) => Promise<void>`     | Attach the camera capability       |
+| `removeCameraFromSession`           | `(sessionId) => Promise<void>`              | Detach the camera capability       |
+| `addStreamToSession`                | `(sessionId, config?) => Promise<void>`     | Deprecated alias of the above      |
+| `removeStreamFromSession`           | `(sessionId) => Promise<void>`              | Deprecated alias of the above      |
+| `openFirmwareUpdate`                | `() => Promise<void>`                       | Open Meta AI firmware update       |
+| `openDATGlassesAppUpdate`           | `() => Promise<void>`                       | Open Meta AI DAT app update        |
 | `capturePhoto`                      | `(format?) => Promise<void>`                | Capture photo                      |
 | `enableMockDeviceKit`               | `(config?) => Promise<void>`                | Enable mock device kit             |
 | `disableMockDeviceKit`              | `() => Promise<void>`                       | Disable mock device kit            |
 | `isMockDeviceKitEnabled`            | `() => Promise<boolean>`                    | Check if mock kit is enabled       |
-| `pairMockDevice`                    | `() => Promise<string>`                     | Pair a mock device                 |
+| `pairMockDevice`                    | `(model?) => Promise<string>`               | Pair a mock device (any model)     |
 | `unpairMockDevice`                  | `(deviceId) => Promise<void>`               | Unpair a mock device               |
+| `mockDeviceTap`                     | `(id) => Promise<void>`                     | Simulate a captouch tap            |
+| `mockDeviceTapAndHold`              | `(id) => Promise<void>`                     | Simulate a captouch tap-and-hold   |
 | `mockSetPermissionStatus`           | `(permission, status) => Promise<void>`     | Set mock permission status         |
 | `mockSetPermissionRequestResult`    | `(permission, result) => Promise<void>`     | Set mock permission request result |
 | `mockDeviceSetCameraFeedFromCamera` | `(id, facing) => Promise<void>`             | Set mock camera from phone camera  |
@@ -290,8 +301,8 @@ import {
   createSession,
   startSession,
   stopSession,
-  addStreamToSession,
-  removeStreamFromSession,
+  addCameraToSession,
+  removeCameraFromSession,
   capturePhoto,
   addListener,
   // Mock device kit
@@ -312,7 +323,7 @@ import {
   mockDeviceSetCameraFeedFromCamera,
   mockSetPermissionStatus,
   mockSetPermissionRequestResult,
-} from "expo-meta-wearables-dat";
+} from "@chrisgocode/expo-meta-wearables-dat";
 ```
 
 ### Events
@@ -324,10 +335,12 @@ Subscribe via `addListener` or hook callbacks:
 | `onRegistrationStateChange`  | `{ state: RegistrationState }`                                           |
 | `onDevicesChange`            | `{ devices: Device[] }`                                                  |
 | `onLinkStateChange`          | `{ deviceId: string, linkState: LinkState }`                             |
-| `onStreamStateChange`        | `{ state: StreamSessionState }`                                          |
+| `onStreamStateChange`        | `{ sessionId: string; state: StreamState }`                              |
+| `onCameraStateChange`        | `{ sessionId: string; state: CameraState }`                              |
+| `onDeviceStateChange`        | `{ deviceId: DeviceIdentifier; thermalLevel: ThermalLevel }`             |
 | `onVideoFrame`               | `{ timestamp, width, height, isCompressed? }`                            |
 | `onPhotoCaptured`            | `{ filePath, format, timestamp, width?, height?, base64? }`              |
-| `onStreamError`              | `StreamSessionError` (discriminated union)                               |
+| `onStreamError`              | `StreamError` (discriminated union)                                      |
 | `onPermissionStatusChange`   | `{ permission: Permission, status: PermissionStatus }`                   |
 | `onCompatibilityChange`      | `{ deviceId: string, compatibility: Compatibility }`                     |
 | `onDeviceSessionStateChange` | `{ sessionId: string, state: DeviceSessionState }`                       |
@@ -359,9 +372,10 @@ Key types exported from the package:
 - `DeviceSessionState` — `"idle"` \| `"starting"` \| `"started"` \| `"paused"` \| `"stopping"` \| `"stopped"`
 - `DeviceSessionErrorCode` — `"noEligibleDevice"` \| `"sessionAlreadyStopped"` \| `"sessionAlreadyExists"` \| `"sessionIdle"` \| `"capabilityAlreadyActive"` \| `"capabilityNotFound"` \| `"unexpectedError"`
 - `CapabilityState` — `"active"` \| `"stopped"`
-- `StreamSessionConfig` — `{ videoCodec, resolution, frameRate, deviceId?, compressVideo?, skipAppLaunch? }`
-- `StreamSessionState` — `"stopped"` \| `"waitingForDevice"` \| `"starting"` \| `"streaming"` \| `"paused"` \| `"stopping"`
-- `StreamSessionError` — Discriminated union: `internalError` \| `deviceNotFound` \| `deviceNotConnected` \| `timeout` \| `videoStreamingError` \| `permissionDenied` \| `hingesClosed` \| `thermalCritical`
+- `StreamConfiguration` — `{ videoCodec, resolution, frameRate, deviceId?, compressVideo? }` (`skipAppLaunch` was removed in SDK 0.9; `StreamSessionConfig` remains as a deprecated alias)
+- `StreamState` — `"stopped"` \| `"closed"` \| `"waitingForDevice"` \| `"starting"` \| `"started"` \| `"streaming"` \| `"paused"` \| `"stopping"` (`waitingForDevice` is iOS-only; `started`/`closed` are Android-only. `StreamSessionState` remains as a deprecated alias)
+- `CameraState` — `"starting"` \| `"started"` \| `"stopping"` \| `"stopped"` (the SDK 0.9 camera capability lifecycle)
+- `StreamError` — Discriminated union: `internalError` \| `criticalStreamError` \| `deviceNotFound` \| `deviceNotConnected` \| `timeout` \| `videoStreamingError` \| `permissionDenied` \| `hingesClosed` \| `thermalCritical` \| `thermalHot` \| `thermalEmergency` \| `peakPowerShutdown` \| `peakPowerLimit` \| `batteryCritical` \| `batteryLow` \| `photoCaptureFailed` (`StreamSessionError` remains as a deprecated alias)
 - `PhotoData` — `{ filePath, format, timestamp, width?, height?, base64? }`
 - `PhotoCaptureFormat` — `"jpeg"` \| `"heic"`
 - `VideoFrameMetadata` — `{ timestamp, width, height, isCompressed? }`
@@ -403,7 +417,7 @@ import {
   // Permission mocking
   mockSetPermissionStatus,
   mockSetPermissionRequestResult,
-} from "expo-meta-wearables-dat";
+} from "@chrisgocode/expo-meta-wearables-dat";
 ```
 
 | Function                            | Signature                                             | Description                           |
@@ -411,7 +425,7 @@ import {
 | `enableMockDeviceKit`               | `(config?: MockDeviceKitConfig) => Promise<void>`     | Enable mock kit with optional config  |
 | `disableMockDeviceKit`              | `() => Promise<void>`                                 | Disable mock kit and remove fakes     |
 | `isMockDeviceKitEnabled`            | `() => Promise<boolean>`                              | Check if mock kit is enabled          |
-| `pairMockDevice`                    | `() => Promise<string>`                               | Pair a mock Ray-Ban Meta, returns ID  |
+| `pairMockDevice`                    | `(model?: GlassesModel) => Promise<string>`           | Pair mock glasses, returns ID         |
 | `unpairMockDevice`                  | `(id: string) => Promise<void>`                       | Unpair a mock device                  |
 | `getMockDevices`                    | `() => Promise<string[]>`                             | List active mock device IDs           |
 | `mockDevicePowerOn`                 | `(id: string) => Promise<void>`                       | Power on                              |
@@ -451,6 +465,54 @@ The `example/` directory contains a full demo app:
 
 > Requires a physical device with a paired Meta Wearables device.
 
+## Upgrading to SDK 0.9
+
+This release moves from DAT SDK 0.6 to 0.9 (spanning the 0.7, 0.8 and 0.9 SDK releases).
+
+**Requirements:**
+
+- **iOS deployment target is now 17.2** (was 16.0). Apps below 17.2 can no longer link the SDK.
+- Android SDK artifacts move to `com.meta.wearable:mwdat-*:0.9.0`.
+- Meta AI app V282 and glasses firmware V125/V126 are the minimum supported versions for 0.9.
+
+**Changed:**
+
+- Streaming is reached through the consolidated **Camera** capability. `addStreamToSession` /
+  `removeStreamFromSession` are now deprecated aliases of `addCameraToSession` /
+  `removeCameraFromSession`; the SDK's `addStream(...)` was removed in 0.9.
+- `onStreamStateChange` now carries `sessionId` alongside `state`, and the hook callback signature
+  is `(state, sessionId)`.
+- `StreamSessionConfig` / `StreamSessionState` / `StreamSessionError` were renamed to
+  `StreamConfiguration` / `StreamState` / `StreamError` (old names kept as deprecated aliases).
+- `StreamState` gained `started` and `closed` (Android). Android no longer collapses `STARTED` into
+  `starting` or `CLOSED` into `stopped`.
+- `Device` gained `supportsDisplay`.
+- `RegistrationState` gained `unregistering` (Android reports it; iOS collapses it into `unavailable`).
+
+**Removed:**
+
+- `skipAppLaunch` from the stream config — the SDK removed it.
+- iOS `CaptureError` — photo-capture failures now arrive on `onStreamError` as `photoCaptureFailed`.
+  Android still surfaces a typed `CaptureError` for `capturePhoto`.
+- The `MWDAT.DAMEnabled` Info.plist key and the `com.meta.wearable.mwdat.DAM_ENABLED` manifest
+  meta-data are ignored — DAM is always enabled. You can delete them.
+
+**Added:**
+
+- `onCameraStateChange` event and `CameraState` type (the 0.9 camera lifecycle).
+- `onDeviceStateChange` event with `ThermalLevel`, plus `deviceStates` on the hook.
+- `openFirmwareUpdate()` and `openDATGlassesAppUpdate()`.
+- `pairMockDevice(model?)` with `GlassesModel`, plus `mockDeviceTap` / `mockDeviceTapAndHold`
+  captouch simulation.
+- `metaGlasses` device type; new session error codes (`thermalCritical`, `thermalEmergency`,
+  `peakPowerShutdown`, `batteryCritical`, `datAppOnTheGlassesUpdateRequired`, `dwaUnavailable`,
+  and the Android-only `capabilityDenied`, `deviceDisconnected`, `sessionEndedByDevice`).
+- New stream error codes: `thermalEmergency`, `peakPowerShutdown`, `batteryCritical`,
+  `photoCaptureFailed` (iOS) and `criticalStreamError`, `thermalHot`, `batteryLow`,
+  `peakPowerLimit` (Android).
+- `isCodecConfig` in `VideoFrameMetadata` (Android compressed HEVC frames).
+- `crashReportingOptOut` config-plugin prop (SDK 0.9 crash-reporting opt-out).
+
 ## Upgrading to 1.2.0 (SDK 0.6)
 
 1.2.0 migrates to Meta Wearables DAT SDK 0.6, introducing a session-based streaming model.
@@ -468,7 +530,7 @@ The `example/` directory contains a full demo app:
 
 - Session management: `createSession`, `startSession`, `stopSession`, `addStreamToSession`, `removeStreamFromSession`
 - `DeviceSessionState`, `DeviceSessionErrorCode`, `CapabilityState` types
-- `compressVideo` and `skipAppLaunch` in `StreamSessionConfig`
+- `compressVideo` and `skipAppLaunch` in `StreamSessionConfig` (`skipAppLaunch` removed again in SDK 0.9)
 - `isCompressed` in `VideoFrameMetadata`
 - `rayBanMetaOptics` device type
 - Mock device kit lifecycle: `enableMockDeviceKit`, `disableMockDeviceKit`, `isMockDeviceKitEnabled`
@@ -480,10 +542,10 @@ The `example/` directory contains a full demo app:
 
 ### Pod install fails / autolinking skips EMWDAT
 
-Ensure iOS deployment target is 16.0. The config plugin sets this automatically, but if you ran `expo prebuild --clean`, check that `ios/Podfile.properties.json` contains:
+Ensure iOS deployment target is 17.2. The config plugin sets this automatically, but if you ran `expo prebuild --clean`, check that `ios/Podfile.properties.json` contains:
 
 ```json
-{ "ios.deploymentTarget": "16.0" }
+{ "ios.deploymentTarget": "17.2" }
 ```
 
 ### `MWDATCamera` / `MWDATCore` framework not found at runtime

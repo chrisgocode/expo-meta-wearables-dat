@@ -23,7 +23,7 @@ public final class WearablesManager {
     private var devicesToken: AnyListenerToken?
     private var deviceLinkStateTokens: [DeviceIdentifier: AnyListenerToken] = [:]
     private var deviceCompatibilityTokens: [DeviceIdentifier: AnyListenerToken] = [:]
-    private var deviceSessionStateTokens: [DeviceIdentifier: AnyListenerToken] = [:]
+    private var deviceStateTasks: [DeviceIdentifier: Task<Void, Never>] = [:]
     private var urlCallbackObserver: NSObjectProtocol?
 
     // MARK: - Device Sessions
@@ -144,9 +144,9 @@ public final class WearablesManager {
 
         // Remove listeners for removed devices
         for deviceId in removedDevices {
-            deviceLinkStateTokens[deviceId] = nil
-            deviceCompatibilityTokens[deviceId] = nil
-            deviceSessionStateTokens[deviceId] = nil
+            cancelToken(&deviceLinkStateTokens, deviceId)
+            cancelToken(&deviceCompatibilityTokens, deviceId)
+            deviceStateTasks.removeValue(forKey: deviceId)?.cancel()
             logger.debug("Manager", "Removed device listeners", context: ["deviceId": deviceId])
         }
 
@@ -169,14 +169,11 @@ public final class WearablesManager {
                 }
                 deviceCompatibilityTokens[deviceId] = compatToken
 
-                // Session state listener (async in SDK 0.6)
-                Task { [weak self] in
-                    let sessionToken = await Wearables.shared.addDeviceSessionStateListener(forDeviceId: deviceId) { [weak self] state in
-                        Task { @MainActor in
-                            self?.handleDeviceSessionStateChange(deviceId: deviceId, sessionState: state)
-                        }
+                // Device state (thermal) stream — SDK 0.7+
+                deviceStateTasks[deviceId] = Task { @MainActor [weak self] in
+                    for await state in Wearables.shared.deviceStateStream(for: deviceId) {
+                        self?.handleDeviceStateChange(deviceId: deviceId, state: state)
                     }
-                    self?.deviceSessionStateTokens[deviceId] = sessionToken
                 }
 
                 logger.debug("Manager", "Added device listeners", context: ["deviceId": deviceId])
@@ -225,15 +222,15 @@ public final class WearablesManager {
         emitDeviceList()
     }
 
-    private func handleDeviceSessionStateChange(deviceId: DeviceIdentifier, sessionState: SessionState) {
-        logger.info("Manager", "Device session state changed", context: [
+    private func handleDeviceStateChange(deviceId: DeviceIdentifier, state: DeviceState) {
+        logger.debug("Manager", "Device state changed", context: [
             "deviceId": deviceId,
-            "sessionState": String(describing: sessionState)
+            "thermalLevel": String(describing: state.thermalLevel)
         ])
 
-        emitEvent("onDeviceSessionStateChange", [
+        emitEvent("onDeviceStateChange", [
             "deviceId": deviceId,
-            "sessionState": mapSessionState(sessionState)
+            "thermalLevel": mapThermalLevel(state.thermalLevel)
         ])
     }
 
@@ -305,15 +302,15 @@ public final class WearablesManager {
         session.stop()
     }
 
-    /// Get the DeviceSession for a given sessionId (used by StreamSessionManager).
+    /// Get the DeviceSession for a given sessionId (used by CameraSessionManager).
     public func getSession(sessionId: String) -> DeviceSession? {
         return sessions[sessionId]
     }
 
     /// Clean up a stopped session.
     public func removeSession(sessionId: String) {
-        sessionStateTokens[sessionId] = nil
-        sessionErrorTokens[sessionId] = nil
+        cancelToken(&sessionStateTokens, sessionId)
+        cancelToken(&sessionErrorTokens, sessionId)
         sessions[sessionId] = nil
         logger.info("Manager", "Session removed", context: ["sessionId": sessionId])
     }
@@ -368,6 +365,26 @@ public final class WearablesManager {
         try await Wearables.shared.startUnregistration()
     }
 
+    // MARK: - Navigation (SDK 0.7+)
+
+    /// Open the Meta AI firmware update screen for the connected device.
+    public func openFirmwareUpdate() async throws {
+        guard isConfigured else {
+            throw WearablesManagerError.notConfigured
+        }
+        logger.info("Manager", "Opening firmware update")
+        try await Wearables.shared.openFirmwareUpdate()
+    }
+
+    /// Open the Meta AI DAT glasses-app update destination for the configured app.
+    public func openDATGlassesAppUpdate() async throws {
+        guard isConfigured else {
+            throw WearablesManagerError.notConfigured
+        }
+        logger.info("Manager", "Opening DAT glasses app update")
+        try await Wearables.shared.openDATGlassesAppUpdate()
+    }
+
     // MARK: - Permissions
 
     public func checkPermissionStatus(_ permission: Permission) async throws -> PermissionStatus {
@@ -420,7 +437,8 @@ public final class WearablesManager {
             "name": device.name,
             "linkState": mapLinkState(device.linkState),
             "deviceType": mapDeviceType(device.deviceType()),
-            "compatibility": mapCompatibility(device.compatibility())
+            "compatibility": mapCompatibility(device.compatibility()),
+            "supportsDisplay": device.supportsDisplay()
         ]
     }
 
@@ -463,13 +481,16 @@ public final class WearablesManager {
         }
     }
 
-    private func mapSessionState(_ state: SessionState) -> String {
-        switch state {
-        case .stopped: return "stopped"
-        case .waitingForDevice: return "waitingForDevice"
-        case .running: return "running"
-        case .paused: return "paused"
+    private func mapThermalLevel(_ level: ThermalLevel) -> String {
+        switch level {
         case .unknown: return "unknown"
+        case .none: return "none"
+        case .light: return "light"
+        case .moderate: return "moderate"
+        case .severe: return "severe"
+        case .critical: return "critical"
+        case .emergency: return "emergency"
+        case .shutdown: return "shutdown"
         @unknown default: return "unknown"
         }
     }
@@ -481,6 +502,7 @@ public final class WearablesManager {
         case .oakleyMetaVanguard: return "oakleyMetaVanguard"
         case .metaRayBanDisplay: return "metaRayBanDisplay"
         case .rayBanMetaOptics: return "rayBanMetaOptics"
+        case .metaGlasses: return "metaGlasses"
         case .unknown: return "unknown"
         @unknown default: return "unknown"
         }
@@ -506,8 +528,31 @@ public final class WearablesManager {
         case .sessionIdle: return "sessionIdle"
         case .capabilityAlreadyActive: return "capabilityAlreadyActive"
         case .capabilityNotFound: return "capabilityNotFound"
+        case .thermalCritical: return "thermalCritical"
+        case .thermalEmergency: return "thermalEmergency"
+        case .peakPowerShutdown: return "peakPowerShutdown"
+        case .batteryCritical: return "batteryCritical"
+        case .datAppOnTheGlassesUpdateRequired: return "datAppOnTheGlassesUpdateRequired"
+        case .dwaUnavailable: return "dwaUnavailable"
         case .unexpectedError(_): return "unexpectedError"
         @unknown default: return "unexpectedError"
+        }
+    }
+
+    // MARK: - Token Helpers
+
+    private func cancelToken(_ tokens: inout [DeviceIdentifier: AnyListenerToken], _ key: DeviceIdentifier) {
+        guard let token = tokens.removeValue(forKey: key) else { return }
+        Task { await token.cancel() }
+    }
+
+    private func cancelAll(_ tokens: inout [DeviceIdentifier: AnyListenerToken]) {
+        let all = tokens.values
+        tokens.removeAll()
+        Task {
+            for token in all {
+                await token.cancel()
+            }
         }
     }
 
@@ -515,13 +560,22 @@ public final class WearablesManager {
 
     public func cleanup() {
         logger.info("Manager", "Cleaning up listeners")
-        registrationStateToken = nil
-        devicesToken = nil
-        deviceLinkStateTokens.removeAll()
-        deviceCompatibilityTokens.removeAll()
-        deviceSessionStateTokens.removeAll()
-        sessionStateTokens.removeAll()
-        sessionErrorTokens.removeAll()
+        if let token = registrationStateToken {
+            registrationStateToken = nil
+            Task { await token.cancel() }
+        }
+        if let token = devicesToken {
+            devicesToken = nil
+            Task { await token.cancel() }
+        }
+        cancelAll(&deviceLinkStateTokens)
+        cancelAll(&deviceCompatibilityTokens)
+        for task in deviceStateTasks.values {
+            task.cancel()
+        }
+        deviceStateTasks.removeAll()
+        cancelAll(&sessionStateTokens)
+        cancelAll(&sessionErrorTokens)
         sessions.removeAll()
 
         if let observer = urlCallbackObserver {

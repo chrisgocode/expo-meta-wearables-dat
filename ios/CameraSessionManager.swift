@@ -6,17 +6,22 @@ import MWDATCamera
 /// Callback type for frame updates
 public typealias FrameCallback = (UIImage) -> Void
 
-/// Manages camera streaming as a capability attached to a DeviceSession.
+/// Manages the camera capability attached to a `DeviceSession`.
+///
+/// SDK 0.9 consolidated streaming under `Camera`: `DeviceSession.addCamera(config:)` returns a
+/// `Camera` that owns the hardware resource and exposes its `stream` child. Stopping the camera
+/// cascades to the stream.
 @MainActor
-public final class StreamSessionManager {
-    public static let shared = StreamSessionManager()
+public final class CameraSessionManager {
+    public static let shared = CameraSessionManager()
 
     private let logger = EMWDATLogger.shared
 
     // MARK: - State
 
-    /// Active stream sessions keyed by sessionId
-    private var streams: [String: StreamSession] = [:]
+    /// Active cameras keyed by sessionId
+    private var cameras: [String: Camera] = [:]
+    private var cameraStateTokens: [String: AnyListenerToken] = [:]
     private var stateTokens: [String: AnyListenerToken] = [:]
     private var frameTokens: [String: AnyListenerToken] = [:]
     private var errorTokens: [String: AnyListenerToken] = [:]
@@ -51,15 +56,15 @@ public final class StreamSessionManager {
         self.frameCallbackOwner = nil
     }
 
-    // MARK: - Stream Capability Control
+    // MARK: - Camera Capability Control
 
-    /// Add a camera stream capability to a device session and start streaming.
-    public func addStreamToSession(sessionId: String, config: StreamSessionConfig) async throws {
+    /// Add the camera capability to a device session and start its stream.
+    public func addCameraToSession(sessionId: String, config: StreamConfiguration) throws {
         guard let session = WearablesManager.shared.getSession(sessionId: sessionId) else {
-            throw StreamSessionManagerError.sessionNotFound(sessionId)
+            throw CameraSessionManagerError.sessionNotFound(sessionId)
         }
 
-        logger.info("StreamSession", "Adding stream to session", context: [
+        logger.info("Camera", "Adding camera to session", context: [
             "sessionId": sessionId,
             "resolution": String(describing: config.resolution),
             "frameRate": config.frameRate,
@@ -69,45 +74,55 @@ public final class StreamSessionManager {
         // Create HEVC decoder if needed
         if config.videoCodec == .hvc1 {
             hevcDecoders[sessionId] = HEVCDecoder()
-            logger.info("StreamSession", "HEVC decoder created for session", context: ["sessionId": sessionId])
+            logger.info("Camera", "HEVC decoder created for session", context: ["sessionId": sessionId])
         }
 
-        // Add stream capability to the session
-        guard let streamSession = try session.addStream(config: config) else {
-            throw StreamSessionManagerError.streamNotFound(sessionId)
+        // Add the camera capability to the session
+        guard let camera = try session.addCamera(config: config) else {
+            hevcDecoders[sessionId]?.invalidate()
+            hevcDecoders[sessionId] = nil
+            throw CameraSessionManagerError.cameraNotAvailable(sessionId)
         }
-        streams[sessionId] = streamSession
+        cameras[sessionId] = camera
+        let stream = camera.stream
 
-        // Subscribe to state changes
-        stateTokens[sessionId] = streamSession.statePublisher.listen { [weak self] state in
+        // Subscribe to camera lifecycle
+        cameraStateTokens[sessionId] = camera.statePublisher.listen { [weak self] state in
+            Task { @MainActor in
+                self?.handleCameraStateChange(sessionId: sessionId, state: state)
+            }
+        }
+
+        // Subscribe to stream state changes
+        stateTokens[sessionId] = stream.statePublisher.listen { [weak self] state in
             Task { @MainActor in
                 self?.handleStateChange(sessionId: sessionId, state: state)
             }
         }
 
         // Subscribe to video frames
-        frameTokens[sessionId] = streamSession.videoFramePublisher.listen { [weak self] frame in
+        frameTokens[sessionId] = stream.videoFramePublisher.listen { [weak self] frame in
             Task { @MainActor in
                 self?.handleVideoFrame(sessionId: sessionId, frame: frame)
             }
         }
 
         // Subscribe to errors
-        errorTokens[sessionId] = streamSession.errorPublisher.listen { [weak self] error in
+        errorTokens[sessionId] = stream.errorPublisher.listen { [weak self] error in
             Task { @MainActor in
                 self?.handleError(sessionId: sessionId, error: error)
             }
         }
 
         // Subscribe to photos
-        photoTokens[sessionId] = streamSession.photoDataPublisher.listen { [weak self] photoData in
+        photoTokens[sessionId] = stream.photoDataPublisher.listen { [weak self] photoData in
             Task { @MainActor in
                 self?.handlePhotoCapture(sessionId: sessionId, photoData: photoData)
             }
         }
 
-        // Start the stream (required in SDK v0.6)
-        await streamSession.start()
+        // Start the stream (synchronous since SDK 0.8)
+        stream.start()
 
         // Emit initial capability state
         emitEvent("onCapabilityStateChange", [
@@ -115,45 +130,56 @@ public final class StreamSessionManager {
             "state": "active"
         ])
 
-        logger.info("StreamSession", "Stream added and started", context: ["sessionId": sessionId])
+        logger.info("Camera", "Camera added and stream started", context: ["sessionId": sessionId])
     }
 
-    /// Remove the camera stream capability from a session.
-    public func removeStreamFromSession(sessionId: String) async {
-        // Stop the stream before destroying
-        await streams[sessionId]?.stop()
+    /// Remove the camera capability from a session. Stopping the camera cascades to the stream.
+    public func removeCameraFromSession(sessionId: String) {
+        cameras[sessionId]?.stop()
 
-        destroyStream(sessionId: sessionId)
+        destroyCamera(sessionId: sessionId)
 
         emitEvent("onCapabilityStateChange", [
             "sessionId": sessionId,
             "state": "stopped"
         ])
 
-        logger.info("StreamSession", "Stream removed from session", context: ["sessionId": sessionId])
+        logger.info("Camera", "Camera removed from session", context: ["sessionId": sessionId])
     }
 
     /// Capture a photo from the active stream on any session.
     public func capturePhoto(format: PhotoCaptureFormat) -> Bool {
-        // Find the first streaming session
-        guard let (_, streamSession) = streams.first(where: { _ in true }) else {
-            logger.warn("StreamSession", "Cannot capture photo - no active stream")
+        guard let camera = cameras.values.first else {
+            logger.warn("Camera", "Cannot capture photo - no active camera")
             return false
         }
 
-        logger.info("StreamSession", "Capturing photo", context: ["format": String(describing: format)])
-        return streamSession.capturePhoto(format: format)
+        logger.info("Camera", "Capturing photo", context: ["format": String(describing: format)])
+        return camera.stream.capturePhoto(format: format)
     }
 
     // MARK: - Event Handlers
 
-    private func handleStateChange(sessionId: String, state: StreamSessionState) {
-        logger.info("StreamSession", "State changed", context: [
+    private func handleCameraStateChange(sessionId: String, state: CameraState) {
+        logger.info("Camera", "Camera state changed", context: [
+            "sessionId": sessionId,
+            "state": String(describing: state)
+        ])
+
+        emitEvent("onCameraStateChange", [
+            "sessionId": sessionId,
+            "state": mapCameraState(state)
+        ])
+    }
+
+    private func handleStateChange(sessionId: String, state: StreamState) {
+        logger.info("Camera", "Stream state changed", context: [
             "sessionId": sessionId,
             "state": String(describing: state)
         ])
 
         emitEvent("onStreamStateChange", [
+            "sessionId": sessionId,
             "state": mapStreamState(state)
         ])
     }
@@ -183,8 +209,8 @@ public final class StreamSessionManager {
         ])
     }
 
-    private func handleError(sessionId: String, error: StreamSessionError) {
-        logger.error("StreamSession", "Stream error", context: [
+    private func handleError(sessionId: String, error: StreamError) {
+        logger.error("Camera", "Stream error", context: [
             "sessionId": sessionId,
             "error": String(describing: error)
         ])
@@ -193,7 +219,7 @@ public final class StreamSessionManager {
     }
 
     private func handlePhotoCapture(sessionId: String, photoData: PhotoData) {
-        logger.info("StreamSession", "Photo captured", context: [
+        logger.info("Camera", "Photo captured", context: [
             "sessionId": sessionId,
             "format": String(describing: photoData.format)
         ])
@@ -205,7 +231,7 @@ public final class StreamSessionManager {
 
         do {
             try photoData.data.write(to: filePath)
-            logger.info("StreamSession", "Photo saved", context: ["path": filePath.path])
+            logger.info("Camera", "Photo saved", context: ["path": filePath.path])
 
             var payload: [String: Any] = [
                 "filePath": filePath.path,
@@ -220,28 +246,35 @@ public final class StreamSessionManager {
 
             emitEvent("onPhotoCaptured", payload)
         } catch {
-            logger.error("StreamSession", "Failed to save photo", error: error)
+            logger.error("Camera", "Failed to save photo", error: error)
         }
     }
 
     // MARK: - Cleanup
 
-    /// Destroy a specific stream (listeners + decoder).
-    private func destroyStream(sessionId: String) {
-        stateTokens[sessionId] = nil
-        frameTokens[sessionId] = nil
-        errorTokens[sessionId] = nil
-        photoTokens[sessionId] = nil
-        streams[sessionId] = nil
+    /// Destroy a specific camera (listeners + decoder).
+    private func destroyCamera(sessionId: String) {
+        cancel(&cameraStateTokens, sessionId)
+        cancel(&stateTokens, sessionId)
+        cancel(&frameTokens, sessionId)
+        cancel(&errorTokens, sessionId)
+        cancel(&photoTokens, sessionId)
+        cameras[sessionId] = nil
         hevcDecoders[sessionId]?.invalidate()
         hevcDecoders[sessionId] = nil
-        logger.debug("StreamSession", "Stream destroyed", context: ["sessionId": sessionId])
+        logger.debug("Camera", "Camera destroyed", context: ["sessionId": sessionId])
+    }
+
+    private func cancel(_ tokens: inout [String: AnyListenerToken], _ sessionId: String) {
+        guard let token = tokens.removeValue(forKey: sessionId) else { return }
+        Task { await token.cancel() }
     }
 
     /// Full teardown for module lifecycle (OnDestroy).
     public func destroy() {
-        for sessionId in streams.keys {
-            destroyStream(sessionId: sessionId)
+        for sessionId in cameras.keys {
+            cameras[sessionId]?.stop()
+            destroyCamera(sessionId: sessionId)
         }
     }
 
@@ -253,7 +286,17 @@ public final class StreamSessionManager {
 
     // MARK: - Mapping Helpers
 
-    private func mapStreamState(_ state: StreamSessionState) -> String {
+    private func mapCameraState(_ state: CameraState) -> String {
+        switch state {
+        case .starting: return "starting"
+        case .started: return "started"
+        case .stopping: return "stopping"
+        case .stopped: return "stopped"
+        @unknown default: return "stopped"
+        }
+    }
+
+    private func mapStreamState(_ state: StreamState) -> String {
         switch state {
         case .stopping: return "stopping"
         case .stopped: return "stopped"
@@ -265,8 +308,8 @@ public final class StreamSessionManager {
         }
     }
 
-    /// Maps StreamSessionError to a dictionary matching the TS discriminated union
-    private func mapStreamErrorToDict(_ error: StreamSessionError) -> [String: Any] {
+    /// Maps StreamError to a dictionary matching the TS discriminated union
+    private func mapStreamErrorToDict(_ error: StreamError) -> [String: Any] {
         switch error {
         case .deviceNotFound(let deviceId):
             return ["type": "deviceNotFound", "deviceId": deviceId]
@@ -284,6 +327,14 @@ public final class StreamSessionManager {
             return ["type": "hingesClosed"]
         case .thermalCritical:
             return ["type": "thermalCritical"]
+        case .thermalEmergency:
+            return ["type": "thermalEmergency"]
+        case .peakPowerShutdown:
+            return ["type": "peakPowerShutdown"]
+        case .batteryCritical:
+            return ["type": "batteryCritical"]
+        case .photoCaptureFailed:
+            return ["type": "photoCaptureFailed"]
         @unknown default:
             return ["type": "internalError"]
         }
@@ -300,9 +351,9 @@ public final class StreamSessionManager {
 
 // MARK: - Configuration Parsing
 
-extension StreamSessionManager {
+extension CameraSessionManager {
     /// Parse configuration from JavaScript object
-    nonisolated public static func parseConfig(from dict: [String: Any]) -> StreamSessionConfig {
+    nonisolated public static func parseConfig(from dict: [String: Any]) -> StreamConfiguration {
         let videoCodec: VideoCodec
         let compressVideo = dict["compressVideo"] as? Bool ?? false
         if compressVideo || (dict["videoCodec"] as? String) == "hvc1" {
@@ -323,30 +374,28 @@ extension StreamSessionManager {
         }
 
         let frameRate = dict["frameRate"] as? Int ?? 15
-        let skipAppLaunch = dict["skipAppLaunch"] as? Bool ?? false
 
-        return StreamSessionConfig(
+        return StreamConfiguration(
             videoCodec: videoCodec,
             resolution: resolution,
-            frameRate: UInt(frameRate),
-            skipAppLaunch: skipAppLaunch
+            frameRate: UInt(frameRate)
         )
     }
 }
 
 // MARK: - Errors
 
-public enum StreamSessionManagerError: LocalizedError {
+public enum CameraSessionManagerError: LocalizedError {
     case sessionNotFound(String)
-    case streamNotFound(String)
+    case cameraNotAvailable(String)
     case notConfigured
 
     public var errorDescription: String? {
         switch self {
         case .sessionNotFound(let id):
             return "Session not found: \(id)"
-        case .streamNotFound(let id):
-            return "No active stream for session: \(id)"
+        case .cameraNotAvailable(let id):
+            return "Camera capability unavailable for session: \(id)"
         case .notConfigured:
             return "Wearables SDK has not been configured"
         }

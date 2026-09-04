@@ -12,7 +12,9 @@ public class EMWDATModule: Module {
             "onRegistrationStateChange",
             "onDevicesChange",
             "onLinkStateChange",
+            "onDeviceStateChange",
             "onStreamStateChange",
+            "onCameraStateChange",
             "onVideoFrame",
             "onPhotoCaptured",
             "onStreamError",
@@ -32,14 +34,14 @@ public class EMWDATModule: Module {
                     self?.sendEvent(name, body)
                 }
                 WearablesManager.shared.setEventEmitter(emitter)
-                StreamSessionManager.shared.setEventEmitter(emitter)
+                CameraSessionManager.shared.setEventEmitter(emitter)
             }
         }
 
         OnDestroy {
             self.logger.info("Module", "Module destroyed")
             Task { @MainActor in
-                StreamSessionManager.shared.destroy()
+                CameraSessionManager.shared.destroy()
                 WearablesManager.shared.cleanup()
             }
         }
@@ -189,6 +191,32 @@ public class EMWDATModule: Module {
             }
         }
 
+        AsyncFunction("openFirmwareUpdate") { (promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try await WearablesManager.shared.openFirmwareUpdate()
+                    promise.resolve(nil)
+                } catch let error as NavigationError {
+                    promise.reject("NAVIGATION_FAILED", error.description)
+                } catch {
+                    promise.reject("NAVIGATION_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("openDATGlassesAppUpdate") { (promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try await WearablesManager.shared.openDATGlassesAppUpdate()
+                    promise.resolve(nil)
+                } catch let error as NavigationError {
+                    promise.reject("NAVIGATION_FAILED", error.description)
+                } catch {
+                    promise.reject("NAVIGATION_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
         // MARK: - Session Management
 
         AsyncFunction("createSession") { (deviceId: String?, promise: Promise) in
@@ -224,21 +252,23 @@ public class EMWDATModule: Module {
             }
         }
 
-        AsyncFunction("addStreamToSession") { (sessionId: String, config: [String: Any], promise: Promise) in
+        AsyncFunction("addCameraToSession") { (sessionId: String, config: [String: Any], promise: Promise) in
             Task { @MainActor in
                 do {
-                    let sessionConfig = StreamSessionManager.parseConfig(from: config)
-                    try await StreamSessionManager.shared.addStreamToSession(sessionId: sessionId, config: sessionConfig)
+                    let streamConfig = CameraSessionManager.parseConfig(from: config)
+                    try CameraSessionManager.shared.addCameraToSession(sessionId: sessionId, config: streamConfig)
                     promise.resolve(nil)
+                } catch let error as DeviceSessionError {
+                    promise.reject("CAMERA_ADD_FAILED", error.description)
                 } catch {
-                    promise.reject("STREAM_ADD_FAILED", error.localizedDescription)
+                    promise.reject("CAMERA_ADD_FAILED", error.localizedDescription)
                 }
             }
         }
 
-        AsyncFunction("removeStreamFromSession") { (sessionId: String, promise: Promise) in
+        AsyncFunction("removeCameraFromSession") { (sessionId: String, promise: Promise) in
             Task { @MainActor in
-                await StreamSessionManager.shared.removeStreamFromSession(sessionId: sessionId)
+                CameraSessionManager.shared.removeCameraFromSession(sessionId: sessionId)
                 promise.resolve(nil)
             }
         }
@@ -248,7 +278,7 @@ public class EMWDATModule: Module {
         AsyncFunction("capturePhoto") { (format: String, promise: Promise) in
             Task { @MainActor in
                 let photoFormat: PhotoCaptureFormat = format == "heic" ? .heic : .jpeg
-                let success = StreamSessionManager.shared.capturePhoto(format: photoFormat)
+                let success = CameraSessionManager.shared.capturePhoto(format: photoFormat)
                 if success {
                     promise.resolve(nil)
                 } else {
@@ -285,10 +315,14 @@ public class EMWDATModule: Module {
             }
         }
 
-        AsyncFunction("pairMockDevice") { (promise: Promise) in
+        AsyncFunction("pairMockDevice") { (model: String?, promise: Promise) in
             Task { @MainActor in
-                let id = MockDeviceManager.shared.pairMockDevice()
-                promise.resolve(id)
+                do {
+                    let id = try MockDeviceManager.shared.pairMockDevice(model: model ?? "rayBanMeta")
+                    promise.resolve(id)
+                } catch {
+                    promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
+                }
             }
         }
 
@@ -375,6 +409,28 @@ public class EMWDATModule: Module {
             }
         }
 
+        AsyncFunction("mockDeviceTap") { (id: String, promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try MockDeviceManager.shared.tap(id: id)
+                    promise.resolve(nil)
+                } catch {
+                    promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("mockDeviceTapAndHold") { (id: String, promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try MockDeviceManager.shared.tapAndHold(id: id)
+                    promise.resolve(nil)
+                } catch {
+                    promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
+                }
+            }
+        }
+
         AsyncFunction("mockDeviceSetCameraFeed") { (id: String, fileUrl: String, promise: Promise) in
             let url: URL
             if fileUrl.hasPrefix("file://") {
@@ -420,7 +476,7 @@ public class EMWDATModule: Module {
         AsyncFunction("mockDeviceSetCameraFeedFromCamera") { (id: String, facing: String, promise: Promise) in
             Task { @MainActor in
                 do {
-                    try await MockDeviceManager.shared.setCameraFeedFromCamera(id: id, facing: facing)
+                    try MockDeviceManager.shared.setCameraFeedFromCamera(id: id, facing: facing)
                     promise.resolve(nil)
                 } catch {
                     promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
@@ -501,6 +557,8 @@ public class EMWDATModule: Module {
             return "Meta AI app is not installed on this device."
         case .networkUnavailable:
             return "Network is unavailable."
+        case .timeout:
+            return "Registration timed out."
         case .unknown:
             return "Unknown registration error."
         @unknown default:
@@ -516,6 +574,8 @@ public class EMWDATModule: Module {
             return "MWDAT configuration is invalid. Check Info.plist MWDAT dictionary."
         case .metaAINotInstalled:
             return "Meta AI app is not installed on this device."
+        case .timeout:
+            return "Unregistration timed out."
         case .unknown:
             return "Unknown unregistration error."
         @unknown default:

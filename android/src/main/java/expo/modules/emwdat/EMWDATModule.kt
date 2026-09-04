@@ -34,7 +34,9 @@ class EMWDATModule : Module() {
             "onRegistrationStateChange",
             "onDevicesChange",
             "onLinkStateChange",
+            "onDeviceStateChange",
             "onStreamStateChange",
+            "onCameraStateChange",
             "onVideoFrame",
             "onPhotoCaptured",
             "onStreamError",
@@ -52,13 +54,13 @@ class EMWDATModule : Module() {
             }
             WearablesManager.setEventEmitter(emitter)
             WearablesManager.setScope(moduleScope)
-            StreamSessionManager.setEventEmitter(emitter)
-            StreamSessionManager.setScope(moduleScope)
+            CameraSessionManager.setEventEmitter(emitter)
+            CameraSessionManager.setScope(moduleScope)
         }
 
         OnDestroy {
             logger.info("Module", "Module destroyed")
-            StreamSessionManager.destroy()
+            CameraSessionManager.destroy()
             WearablesManager.cleanup()
             moduleScope.cancel()
         }
@@ -156,6 +158,18 @@ class EMWDATModule : Module() {
             WearablesManager.getDevice(identifier)
         }
 
+        AsyncFunction("openFirmwareUpdate") {
+            val activity = appContext.currentActivity
+                ?: throw Exception("Current activity not available")
+            WearablesManager.openFirmwareUpdate(activity)
+        }
+
+        AsyncFunction("openDATGlassesAppUpdate") {
+            val activity = appContext.currentActivity
+                ?: throw Exception("Current activity not available")
+            WearablesManager.openDATGlassesAppUpdate(activity)
+        }
+
         // MARK: - Session Management
 
         AsyncFunction("createSession") { deviceId: String? ->
@@ -170,12 +184,12 @@ class EMWDATModule : Module() {
             WearablesManager.stopSession(sessionId)
         }
 
-        AsyncFunction("addStreamToSession") { sessionId: String, config: Map<String, Any> ->
-            StreamSessionManager.addStreamToSession(sessionId, config)
+        AsyncFunction("addCameraToSession") { sessionId: String, config: Map<String, Any> ->
+            CameraSessionManager.addCameraToSession(sessionId, config)
         }
 
-        AsyncFunction("removeStreamFromSession") { sessionId: String ->
-            StreamSessionManager.removeStreamFromSession(sessionId)
+        AsyncFunction("removeCameraFromSession") { sessionId: String ->
+            CameraSessionManager.removeCameraFromSession(sessionId)
         }
 
         // MARK: - Photo Capture
@@ -184,7 +198,7 @@ class EMWDATModule : Module() {
             val context = appContext.reactContext?.applicationContext
                 ?: throw Exception("Application context not available")
             runBlocking {
-                StreamSessionManager.capturePhoto(context, format)
+                CameraSessionManager.capturePhoto(context, format)
             }
             null
         }
@@ -214,11 +228,11 @@ class EMWDATModule : Module() {
             MockDeviceManager.isMockDeviceKitEnabled(context)
         }
 
-        AsyncFunction("pairMockDevice") {
+        AsyncFunction("pairMockDevice") { model: String? ->
             if (!isDebug) throw Exception("Mock devices are only available in debug builds")
             val context = appContext.reactContext?.applicationContext
                 ?: throw Exception("Application context not available")
-            MockDeviceManager.pairMockDevice(context)
+            MockDeviceManager.pairMockDevice(context, model ?: "rayBanMeta")
         }
 
         AsyncFunction("unpairMockDevice") { deviceId: String ->
@@ -261,6 +275,16 @@ class EMWDATModule : Module() {
         AsyncFunction("mockDeviceUnfold") { id: String ->
             if (!isDebug) throw Exception("Mock devices are only available in debug builds")
             MockDeviceManager.unfold(id)
+        }
+
+        AsyncFunction("mockDeviceTap") { id: String ->
+            if (!isDebug) throw Exception("Mock devices are only available in debug builds")
+            MockDeviceManager.tap(id)
+        }
+
+        AsyncFunction("mockDeviceTapAndHold") { id: String ->
+            if (!isDebug) throw Exception("Mock devices are only available in debug builds")
+            MockDeviceManager.tapAndHold(id)
         }
 
         AsyncFunction("mockDeviceSetCameraFeed") { id: String, fileUrl: String ->

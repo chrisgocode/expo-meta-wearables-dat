@@ -1,13 +1,13 @@
 # Contributing
 
-Thanks for your interest in contributing to `expo-meta-wearables-dat`!
+Thanks for your interest in contributing to `@chrisgocode/expo-meta-wearables-dat`!
 
 ## Development Setup
 
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/circus-kitchens/expo-meta-wearables-dat.git
+   git clone https://github.com/chrisgocode/expo-meta-wearables-dat.git
    cd expo-meta-wearables-dat
    ```
 

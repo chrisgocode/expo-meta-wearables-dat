@@ -134,3 +134,10 @@ Initial release — full Expo native module for Meta Wearables DAT iOS SDK 0.4.
 - **Android stubs** — all methods throw "platform not supported" for consistent cross-platform API
 - **Web stubs** — all methods throw "not supported" for safe web bundling
 - **Example app** — full-featured demo with device listing, stream preview, photo capture, and event logging
+
+---
+
+_Releases v0.1.0 through v1.3.0 above were published upstream as `expo-meta-wearables-dat`
+by [circus-kitchens](https://github.com/circus-kitchens/expo-meta-wearables-dat); their
+compare links resolve against that repository. This fork continues the line as
+`@chrisgocode/expo-meta-wearables-dat`._

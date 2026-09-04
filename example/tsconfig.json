@@ -3,8 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "expo-meta-wearables-dat": ["../src/index"],
-      "expo-meta-wearables-dat/*": ["../src/*"]
+      "@chrisgocode/expo-meta-wearables-dat": ["../src/index"],
+      "@chrisgocode/expo-meta-wearables-dat/*": ["../src/*"]
     }
   }
 }

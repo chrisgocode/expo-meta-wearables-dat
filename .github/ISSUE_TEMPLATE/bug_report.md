@@ -22,7 +22,7 @@ What you expected to happen.
 
 ## Environment
 
-- **expo-meta-wearables-dat version**:
+- **@chrisgocode/expo-meta-wearables-dat version**:
 - **React Native version**:
 - **Expo SDK version**:
 - **iOS version**:

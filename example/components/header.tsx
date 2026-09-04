@@ -2,12 +2,12 @@ import { Feather } from "@expo/vector-icons";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 const DOCS_URL = "https://wearables.developer.meta.com/docs/develop/";
-const GITHUB_URL = "https://github.com/circus-kitchens/expo-meta-wearables-dat";
+const GITHUB_URL = "https://github.com/chrisgocode/expo-meta-wearables-dat";
 
 export function Header() {
   return (
     <View style={styles.container}>
-      <Text style={styles.packageName}>expo-meta-wearables-dat</Text>
+      <Text style={styles.packageName}>@chrisgocode/expo-meta-wearables-dat</Text>
       <Text style={styles.title}>EMWDAT Example</Text>
       <View style={styles.linkRow}>
         <Pressable onPress={() => Linking.openURL(GITHUB_URL)} style={styles.link}>

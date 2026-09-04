@@ -1,8 +1,8 @@
 import type {
   RegistrationState,
-  StreamSessionState,
+  StreamState,
   StreamSessionError,
-} from "expo-meta-wearables-dat";
+} from "@chrisgocode/expo-meta-wearables-dat";
 
 // =============================================================================
 // Types
@@ -70,7 +70,7 @@ export function registrationColor(state: RegistrationState): string {
   }
 }
 
-export function streamColor(state: StreamSessionState): string {
+export function streamColor(state: StreamState): string {
   switch (state) {
     case "streaming":
       return "#22c55e";

@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 
 import {
   addListener,
-  addStreamToSession,
+  addCameraToSession,
   capturePhoto,
   createSession,
   EMWDATModule,
@@ -24,8 +24,10 @@ jest.mock("expo", () => {
     createSession: jest.fn(() => Promise.resolve("session-123")),
     startSession: jest.fn(() => Promise.resolve()),
     stopSession: jest.fn(() => Promise.resolve()),
-    addStreamToSession: jest.fn(() => Promise.resolve()),
-    removeStreamFromSession: jest.fn(() => Promise.resolve()),
+    addCameraToSession: jest.fn(() => Promise.resolve()),
+    removeCameraFromSession: jest.fn(() => Promise.resolve()),
+    openFirmwareUpdate: jest.fn(() => Promise.resolve()),
+    openDATGlassesAppUpdate: jest.fn(() => Promise.resolve()),
     capturePhoto: jest.fn(() => Promise.resolve()),
     enableMockDeviceKit: jest.fn(() => Promise.resolve()),
     disableMockDeviceKit: jest.fn(() => Promise.resolve()),
@@ -39,6 +41,8 @@ jest.mock("expo", () => {
     mockDeviceDoff: jest.fn(() => Promise.resolve()),
     mockDeviceFold: jest.fn(() => Promise.resolve()),
     mockDeviceUnfold: jest.fn(() => Promise.resolve()),
+    mockDeviceTap: jest.fn(() => Promise.resolve()),
+    mockDeviceTapAndHold: jest.fn(() => Promise.resolve()),
     mockDeviceSetCameraFeed: jest.fn(() => Promise.resolve()),
     mockDeviceSetCapturedImage: jest.fn(() => Promise.resolve()),
     mockDeviceSetCameraFeedFromCamera: jest.fn(() => Promise.resolve()),
@@ -95,14 +99,14 @@ describe("EMWDATModule wrappers", () => {
       expect(native.createSession).toHaveBeenCalledWith(undefined);
     });
 
-    it("addStreamToSession defaults to empty config when called without config", async () => {
-      await addStreamToSession("session-123");
-      expect(native.addStreamToSession).toHaveBeenCalledWith("session-123", {});
+    it("addCameraToSession defaults to empty config when called without config", async () => {
+      await addCameraToSession("session-123");
+      expect(native.addCameraToSession).toHaveBeenCalledWith("session-123", {});
     });
 
-    it("addStreamToSession passes config with compressVideo", async () => {
-      await addStreamToSession("session-123", { compressVideo: true, resolution: "high" });
-      expect(native.addStreamToSession).toHaveBeenCalledWith("session-123", {
+    it("addCameraToSession passes config with compressVideo", async () => {
+      await addCameraToSession("session-123", { compressVideo: true, resolution: "high" });
+      expect(native.addCameraToSession).toHaveBeenCalledWith("session-123", {
         compressVideo: true,
         resolution: "high",
       });

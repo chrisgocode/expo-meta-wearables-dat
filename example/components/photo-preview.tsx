@@ -1,4 +1,4 @@
-import type { PhotoData } from "expo-meta-wearables-dat";
+import type { PhotoData } from "@chrisgocode/expo-meta-wearables-dat";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 import { Btn, Section, StatusRow } from "./ui";

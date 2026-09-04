@@ -10,8 +10,9 @@ import type {
   Permission,
   PermissionStatus,
   PhotoCaptureFormat,
+  GlassesModel,
   RegistrationState,
-  StreamSessionConfig,
+  StreamConfiguration,
 } from "./EMWDAT.types";
 
 /**
@@ -30,20 +31,22 @@ declare class EMWDATNativeModule extends NativeModule<EMWDATModuleEvents> {
   requestPermission(permission: string): Promise<string>;
   getDevices(): Promise<Device[]>;
   getDevice(identifier: string): Promise<Device | null>;
+  openFirmwareUpdate(): Promise<void>;
+  openDATGlassesAppUpdate(): Promise<void>;
 
   // Session-based streaming
   createSession(deviceId?: string): Promise<string>;
   startSession(sessionId: string): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
-  addStreamToSession(sessionId: string, config: Partial<StreamSessionConfig>): Promise<void>;
-  removeStreamFromSession(sessionId: string): Promise<void>;
+  addCameraToSession(sessionId: string, config: Partial<StreamConfiguration>): Promise<void>;
+  removeCameraFromSession(sessionId: string): Promise<void>;
   capturePhoto(format: string): Promise<void>;
 
   // Mock device kit
   enableMockDeviceKit(config: MockDeviceKitConfig): Promise<void>;
   disableMockDeviceKit(): Promise<void>;
   isMockDeviceKitEnabled(): Promise<boolean>;
-  pairMockDevice(): Promise<string>;
+  pairMockDevice(model: string): Promise<string>;
   unpairMockDevice(deviceId: string): Promise<void>;
   getMockDevices(): Promise<string[]>;
   mockDevicePowerOn(id: string): Promise<void>;
@@ -52,6 +55,8 @@ declare class EMWDATNativeModule extends NativeModule<EMWDATModuleEvents> {
   mockDeviceDoff(id: string): Promise<void>;
   mockDeviceFold(id: string): Promise<void>;
   mockDeviceUnfold(id: string): Promise<void>;
+  mockDeviceTap(id: string): Promise<void>;
+  mockDeviceTapAndHold(id: string): Promise<void>;
   mockDeviceSetCameraFeed(id: string, fileUrl: string): Promise<void>;
   mockDeviceSetCapturedImage(id: string, fileUrl: string): Promise<void>;
   mockDeviceSetCameraFeedFromCamera(id: string, facing: string): Promise<void>;
@@ -137,6 +142,16 @@ export async function getDevice(identifier: string): Promise<Device | null> {
   return EMWDATModule.getDevice(identifier);
 }
 
+/** Open the Meta AI firmware update screen for the connected device. */
+export async function openFirmwareUpdate(): Promise<void> {
+  return EMWDATModule.openFirmwareUpdate();
+}
+
+/** Open the Meta AI DAT glasses-app update destination for the configured app. */
+export async function openDATGlassesAppUpdate(): Promise<void> {
+  return EMWDATModule.openDATGlassesAppUpdate();
+}
+
 // =============================================================================
 // Session-based streaming
 // =============================================================================
@@ -156,17 +171,35 @@ export async function stopSession(sessionId: string): Promise<void> {
   return EMWDATModule.stopSession(sessionId);
 }
 
-/** Attach a camera stream capability to a session. */
-export async function addStreamToSession(
+/**
+ * Attach the camera capability to a session and start its stream.
+ *
+ * Backed by `DeviceSession.addCamera(config)` (SDK 0.9) — the camera owns the hardware
+ * resource and exposes the video stream as its child.
+ */
+export async function addCameraToSession(
   sessionId: string,
-  config?: Partial<StreamSessionConfig>
+  config?: Partial<StreamConfiguration>
 ): Promise<void> {
-  return EMWDATModule.addStreamToSession(sessionId, config ?? {});
+  return EMWDATModule.addCameraToSession(sessionId, config ?? {});
 }
 
-/** Remove the camera stream capability from a session. */
+/** Detach the camera capability from a session. Stopping it cascades to the stream. */
+export async function removeCameraFromSession(sessionId: string): Promise<void> {
+  return EMWDATModule.removeCameraFromSession(sessionId);
+}
+
+/** @deprecated Renamed to {@link addCameraToSession} for SDK 0.9 (`addStream` was removed). */
+export async function addStreamToSession(
+  sessionId: string,
+  config?: Partial<StreamConfiguration>
+): Promise<void> {
+  return addCameraToSession(sessionId, config);
+}
+
+/** @deprecated Renamed to {@link removeCameraFromSession} for SDK 0.9. */
 export async function removeStreamFromSession(sessionId: string): Promise<void> {
-  return EMWDATModule.removeStreamFromSession(sessionId);
+  return removeCameraFromSession(sessionId);
 }
 
 /** Capture a photo from the active stream. Defaults to JPEG format. */
@@ -193,9 +226,9 @@ export async function isMockDeviceKitEnabled(): Promise<boolean> {
   return EMWDATModule.isMockDeviceKitEnabled();
 }
 
-/** Pair a simulated Ray-Ban Meta device. Returns the device identifier. */
-export async function pairMockDevice(): Promise<string> {
-  return EMWDATModule.pairMockDevice();
+/** Pair a simulated glasses device. Defaults to Ray-Ban Meta. Returns the device identifier. */
+export async function pairMockDevice(model: GlassesModel = "rayBanMeta"): Promise<string> {
+  return EMWDATModule.pairMockDevice(model);
 }
 
 /** Unpair a mock device by identifier. */
@@ -236,6 +269,16 @@ export async function mockDeviceFold(id: string): Promise<void> {
 /** Simulate unfolding the glasses. */
 export async function mockDeviceUnfold(id: string): Promise<void> {
   return EMWDATModule.mockDeviceUnfold(id);
+}
+
+/** Simulate a captouch tap on a mock device (pauses/resumes the active stream). */
+export async function mockDeviceTap(id: string): Promise<void> {
+  return EMWDATModule.mockDeviceTap(id);
+}
+
+/** Simulate a captouch tap-and-hold on a mock device (stops the active stream). */
+export async function mockDeviceTapAndHold(id: string): Promise<void> {
+  return EMWDATModule.mockDeviceTapAndHold(id);
 }
 
 /** Set the camera feed video for a mock device from a local file URL. */

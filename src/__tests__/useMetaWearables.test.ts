@@ -20,8 +20,10 @@ jest.mock("../EMWDATModule", () => ({
   createSession: jest.fn(() => Promise.resolve("session-123")),
   startSession: jest.fn(() => Promise.resolve()),
   stopSession: jest.fn(() => Promise.resolve()),
-  addStreamToSession: jest.fn(() => Promise.resolve()),
-  removeStreamFromSession: jest.fn(() => Promise.resolve()),
+  addCameraToSession: jest.fn(() => Promise.resolve()),
+  removeCameraFromSession: jest.fn(() => Promise.resolve()),
+  openFirmwareUpdate: jest.fn(() => Promise.resolve()),
+  openDATGlassesAppUpdate: jest.fn(() => Promise.resolve()),
   capturePhoto: jest.fn(() => Promise.resolve()),
   enableMockDeviceKit: jest.fn(() => Promise.resolve()),
   disableMockDeviceKit: jest.fn(() => Promise.resolve()),
@@ -31,6 +33,8 @@ jest.mock("../EMWDATModule", () => ({
   mockSetPermissionStatus: jest.fn(() => Promise.resolve()),
   mockSetPermissionRequestResult: jest.fn(() => Promise.resolve()),
   mockDeviceSetCameraFeedFromCamera: jest.fn(() => Promise.resolve()),
+  mockDeviceTap: jest.fn(() => Promise.resolve()),
+  mockDeviceTapAndHold: jest.fn(() => Promise.resolve()),
 }));
 
 const m = require("../EMWDATModule") as Record<string, jest.Mock>;
@@ -58,8 +62,8 @@ beforeEach(() => {
   m.createSession.mockResolvedValue("session-123");
   m.startSession.mockResolvedValue(undefined);
   m.stopSession.mockResolvedValue(undefined);
-  m.addStreamToSession.mockResolvedValue(undefined);
-  m.removeStreamFromSession.mockResolvedValue(undefined);
+  m.addCameraToSession.mockResolvedValue(undefined);
+  m.removeCameraFromSession.mockResolvedValue(undefined);
   m.capturePhoto.mockResolvedValue(undefined);
 });
 
@@ -285,21 +289,21 @@ describe("session-based streaming", () => {
     expect(m.createSession).toHaveBeenCalled();
   });
 
-  it("addStreamToSession checks permission then delegates", async () => {
+  it("addCameraToSession checks permission then delegates", async () => {
     m.checkPermissionStatus.mockResolvedValue("granted");
 
     const { result } = renderHook(() => useMetaWearables({ autoConfig: false }));
     await configureRegistered(result);
 
     await act(async () => {
-      await result.current.addStreamToSession("session-123", { resolution: "high" });
+      await result.current.addCameraToSession("session-123", { resolution: "high" });
     });
 
     expect(m.checkPermissionStatus).toHaveBeenCalledWith("camera");
-    expect(m.addStreamToSession).toHaveBeenCalledWith("session-123", { resolution: "high" });
+    expect(m.addCameraToSession).toHaveBeenCalledWith("session-123", { resolution: "high" });
   });
 
-  it("addStreamToSession requests permission if denied", async () => {
+  it("addCameraToSession requests permission if denied", async () => {
     m.checkPermissionStatus.mockResolvedValue("denied");
     m.requestPermission.mockResolvedValue("granted");
 
@@ -307,14 +311,14 @@ describe("session-based streaming", () => {
     await configureRegistered(result);
 
     await act(async () => {
-      await result.current.addStreamToSession("session-123");
+      await result.current.addCameraToSession("session-123");
     });
 
     expect(m.requestPermission).toHaveBeenCalledWith("camera");
-    expect(m.addStreamToSession).toHaveBeenCalled();
+    expect(m.addCameraToSession).toHaveBeenCalled();
   });
 
-  it("addStreamToSession throws if permission denied after request", async () => {
+  it("addCameraToSession throws if permission denied after request", async () => {
     m.checkPermissionStatus.mockResolvedValue("denied");
     m.requestPermission.mockResolvedValue("denied");
 
@@ -322,11 +326,11 @@ describe("session-based streaming", () => {
     await configureRegistered(result);
 
     await act(async () => {
-      await expect(result.current.addStreamToSession("session-123")).rejects.toThrow(
+      await expect(result.current.addCameraToSession("session-123")).rejects.toThrow(
         "Camera permission required"
       );
     });
-    expect(m.addStreamToSession).not.toHaveBeenCalled();
+    expect(m.addCameraToSession).not.toHaveBeenCalled();
   });
 
   it("stopSession delegates to native", async () => {
@@ -497,11 +501,11 @@ describe("events", () => {
     expect(result.current.streamState).toBe("stopped");
 
     await act(async () => {
-      listeners.onStreamStateChange({ state: "streaming" });
+      listeners.onStreamStateChange({ sessionId: "session-123", state: "streaming" });
     });
 
     expect(result.current.streamState).toBe("streaming");
-    expect(onStreamStateChange).toHaveBeenCalledWith("streaming");
+    expect(onStreamStateChange).toHaveBeenCalledWith("streaming", "session-123");
   });
 
   it("cleans up subscriptions on unmount", () => {
@@ -514,10 +518,10 @@ describe("events", () => {
 
     const { unmount } = renderHook(() => useMetaWearables({ autoConfig: false }));
 
-    // 12 events: registration, devices, linkState, streamState, videoFrame,
-    // photoCaptured, streamError, permissionStatus, compatibility,
-    // deviceSessionState, deviceSessionError, capabilityState
-    expect(removeFns.length).toBe(12);
+    // 14 events: registration, devices, linkState, deviceState, streamState,
+    // cameraState, videoFrame, photoCaptured, streamError, permissionStatus,
+    // compatibility, deviceSessionState, deviceSessionError, capabilityState
+    expect(removeFns.length).toBe(14);
 
     unmount();
 

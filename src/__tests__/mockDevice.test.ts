@@ -11,6 +11,8 @@ import {
   mockDeviceDoff,
   mockDeviceFold,
   mockDeviceUnfold,
+  mockDeviceTap,
+  mockDeviceTapAndHold,
   mockDeviceSetCameraFeed,
   mockDeviceSetCapturedImage,
   mockDeviceSetCameraFeedFromCamera,
@@ -33,6 +35,8 @@ jest.mock("expo", () => ({
     mockDeviceDoff: jest.fn().mockResolvedValue(undefined),
     mockDeviceFold: jest.fn().mockResolvedValue(undefined),
     mockDeviceUnfold: jest.fn().mockResolvedValue(undefined),
+    mockDeviceTap: jest.fn().mockResolvedValue(undefined),
+    mockDeviceTapAndHold: jest.fn().mockResolvedValue(undefined),
     mockDeviceSetCameraFeed: jest.fn().mockResolvedValue(undefined),
     mockDeviceSetCapturedImage: jest.fn().mockResolvedValue(undefined),
     mockDeviceSetCameraFeedFromCamera: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +74,11 @@ describe("Mock device kit lifecycle", () => {
 describe("Mock device pairing", () => {
   it("pairMockDevice returns device id", async () => {
     const id = await pairMockDevice();
+    expect(id).toBe("mock-id-123");
+  });
+
+  it("pairMockDevice accepts a glasses model (SDK 0.8+)", async () => {
+    const id = await pairMockDevice("oakleyMetaVanguard");
     expect(id).toBe("mock-id-123");
   });
 
@@ -134,5 +143,15 @@ describe("Mock permissions", () => {
 
   it("mockSetPermissionRequestResult resolves", async () => {
     await expect(mockSetPermissionRequestResult("camera", "denied")).resolves.toBeUndefined();
+  });
+});
+
+describe("Captouch simulation (SDK 0.7+)", () => {
+  it("mockDeviceTap resolves", async () => {
+    await expect(mockDeviceTap("mock-id-123")).resolves.toBeUndefined();
+  });
+
+  it("mockDeviceTapAndHold resolves", async () => {
+    await expect(mockDeviceTapAndHold("mock-id-123")).resolves.toBeUndefined();
   });
 });

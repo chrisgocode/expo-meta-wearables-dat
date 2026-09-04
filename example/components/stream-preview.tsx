@@ -1,13 +1,13 @@
-import { Feather } from "@expo/vector-icons";
-import { EMWDATStreamView } from "expo-meta-wearables-dat";
+import { EMWDATStreamView } from "@chrisgocode/expo-meta-wearables-dat";
 import type {
   Device,
   DeviceIdentifier,
   PhotoCaptureFormat,
   StreamingResolution,
-  StreamSessionState,
+  StreamState,
   VideoCodec,
-} from "expo-meta-wearables-dat";
+} from "@chrisgocode/expo-meta-wearables-dat";
+import { Feather } from "@expo/vector-icons";
 import { useState } from "react";
 import { Alert, Modal, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
 
@@ -36,7 +36,7 @@ export function StreamPreview({
   onStopStream,
   onCapturePhoto,
 }: {
-  streamState: StreamSessionState;
+  streamState: StreamState;
   fps: number;
   frameDimensions: string;
   resolution: StreamingResolution;
