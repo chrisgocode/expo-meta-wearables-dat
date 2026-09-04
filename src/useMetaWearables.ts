@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  DisplayError,
+  DisplayRoot,
+  DisplayState,
   CameraFacing,
   CameraState,
   CapabilityState,
@@ -26,6 +29,11 @@ import {
   addListener,
   addCameraToSession as nativeAddCameraToSession,
   capturePhoto as nativeCapturePhoto,
+  addDisplayToSession as nativeAddDisplayToSession,
+  renderDisplay as nativeRenderDisplay,
+  clearDisplay as nativeClearDisplay,
+  removeDisplayFromSession as nativeRemoveDisplayFromSession,
+  getDisplayState as nativeGetDisplayState,
   checkPermissionStatus as nativeCheckPermissionStatus,
   configure as nativeConfigure,
   createSession as nativeCreateSession,
@@ -110,6 +118,7 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
   const [capabilityStates, setCapabilityStates] = useState<Record<string, CapabilityState>>({});
   const [streamState, setStreamState] = useState<StreamState>("stopped");
   const [cameraState, setCameraState] = useState<CameraState>("stopped");
+  const [displayState, setDisplayState] = useState<DisplayState | null>(null);
 
   // Sync helpers — update both ref and state
   const syncIsConfigured = useCallback((v: boolean) => {
@@ -251,6 +260,20 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
           [e.sessionId]: e.state,
         }));
         callbacksRef.current.onCapabilityStateChange?.(e.sessionId, e.state);
+      }),
+
+      addListener("onDisplayStateChange", (e) => {
+        setDisplayState(e.state);
+        callbacksRef.current.onDisplayStateChange?.(e.state, e.sessionId);
+      }),
+
+      addListener("onDisplayError", (e) => {
+        const { sessionId, ...error } = e;
+        callbacksRef.current.onDisplayError?.(error as DisplayError, sessionId);
+      }),
+
+      addListener("onDisplayVideoEvent", (e) => {
+        callbacksRef.current.onDisplayVideoEvent?.(e.event, e.errorType, e.sessionId);
       }),
     ];
 
@@ -427,6 +450,30 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Display actions
+  // ---------------------------------------------------------------------------
+
+  const addDisplayToSession = useCallback(async (sessionId: string): Promise<void> => {
+    await nativeAddDisplayToSession(sessionId);
+  }, []);
+
+  const renderDisplay = useCallback(async (sessionId: string, root: DisplayRoot): Promise<void> => {
+    await nativeRenderDisplay(sessionId, root);
+  }, []);
+
+  const clearDisplay = useCallback(async (sessionId: string): Promise<void> => {
+    await nativeClearDisplay(sessionId);
+  }, []);
+
+  const removeDisplayFromSession = useCallback(async (sessionId: string): Promise<void> => {
+    await nativeRemoveDisplayFromSession(sessionId);
+  }, []);
+
+  const getDisplayState = useCallback(async (sessionId: string): Promise<DisplayState> => {
+    return nativeGetDisplayState(sessionId);
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Mock device kit actions
   // ---------------------------------------------------------------------------
 
@@ -497,6 +544,7 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
     capabilityStates,
     streamState,
     cameraState,
+    displayState,
 
     // Actions — configuration
     configure,
@@ -525,6 +573,11 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
     addStreamToSession: addCameraToSession,
     removeStreamFromSession: removeCameraFromSession,
     capturePhoto,
+    addDisplayToSession,
+    renderDisplay,
+    clearDisplay,
+    removeDisplayFromSession,
+    getDisplayState,
 
     // Actions — mock device kit
     enableMockDeviceKit,

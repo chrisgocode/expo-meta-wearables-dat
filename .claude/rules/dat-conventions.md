@@ -2,11 +2,11 @@
 
 ## Architecture
 
-The SDK is organized into four public modules (this repo links three — Display is not wrapped):
+The SDK is organized into four public modules (this repo links all four):
 
 - **mwdat-core**: Device discovery, registration, permissions, device selectors, session management
 - **mwdat-camera**: Camera capability (`Camera` → `Camera.stream`), VideoFrame, photo capture
-- **mwdat-display**: Display capability for Meta Ray-Ban Display — not wrapped by this module
+- **mwdat-display**: Display capability for Meta Ray-Ban Display
 - **mwdat-mockdevice**: MockDeviceKit for testing without hardware
 
 ## Session + Camera model (v0.9)
@@ -125,6 +125,7 @@ Dependencies use Maven coordinates via GitHub Packages:
 ```gradle
 implementation "com.meta.wearable:mwdat-core:0.9.0"
 implementation "com.meta.wearable:mwdat-camera:0.9.0"
+implementation "com.meta.wearable:mwdat-display:0.9.0"
 implementation "com.meta.wearable:mwdat-mockdevice:0.9.0"
 ```
 
@@ -133,6 +134,35 @@ Requires GitHub Packages Maven repository with `GITHUB_ACTOR`/`GITHUB_TOKEN` cre
 DAM is always enabled since 0.9 — the `com.meta.wearable.mwdat.DAM_ENABLED` manifest
 meta-data key is ignored. Crash reporting can be opted out with
 `<meta-data android:name="com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT" android:value="true" />`.
+
+## Display capability (v0.9)
+
+```kotlin
+val display = session.addDisplay(DisplayConfiguration()).getOrElse { error ->
+    throw IllegalStateException(error.description)
+}
+
+// Each sendContent replaces the entire screen — there are no incremental updates.
+display.sendContent {
+    flexBox(direction = Direction.COLUMN, gap = 12) {
+        text("Step 1", style = TextStyle.META)
+        text("Fill the kettle", style = TextStyle.HEADING)
+        button(label = "Next", style = ButtonStyle.PRIMARY, onClick = { /* handle */ })
+    }
+}.onFailure { error, _ -> /* DisplayError */ }
+
+display.clearDisplay()
+display.stop()
+session.removeDisplay()
+```
+
+`DisplayState`: `STARTING → STARTED → STOPPING → STOPPED → CLOSED` (iOS has no `CLOSED`).
+`DisplayError`: `DEVICE_DISCONNECTED`, `INVALID_SESSION_STATE`, `RENDERING_FAILED`,
+`UNEXPECTED_ERROR` — note this shares only `DEVICE_DISCONNECTED` with the iOS enum.
+
+Only `flexBox` and `button` take an `onClick`; `text`, `image` and `icon` do not. Only `flexBox`
+and `video` may be the root (`ContentScope` exposes just those two). Padding parameters are
+`paddingTop` / `paddingBottom` / `paddingStart` / `paddingEnd`.
 
 ## Links
 

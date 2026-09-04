@@ -518,10 +518,12 @@ describe("events", () => {
 
     const { unmount } = renderHook(() => useMetaWearables({ autoConfig: false }));
 
-    // 14 events: registration, devices, linkState, deviceState, streamState,
+    // 17 events: registration, devices, linkState, deviceState, streamState,
     // cameraState, videoFrame, photoCaptured, streamError, permissionStatus,
-    // compatibility, deviceSessionState, deviceSessionError, capabilityState
-    expect(removeFns.length).toBe(14);
+    // compatibility, deviceSessionState, deviceSessionError, capabilityState,
+    // displayState, displayError, displayVideoEvent.
+    // onDisplayTap is not here — EMWDATModule owns it, routing taps to the caller's closures.
+    expect(removeFns.length).toBe(17);
 
     unmount();
 

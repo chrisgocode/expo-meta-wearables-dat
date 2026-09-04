@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import MWDATCore
 import MWDATCamera
+import MWDATDisplay
 
 public class EMWDATModule: Module {
     private let logger = EMWDATLogger.shared
@@ -22,7 +23,11 @@ public class EMWDATModule: Module {
             "onCompatibilityChange",
             "onDeviceSessionStateChange",
             "onDeviceSessionError",
-            "onCapabilityStateChange"
+            "onCapabilityStateChange",
+            "onDisplayStateChange",
+            "onDisplayTap",
+            "onDisplayError",
+            "onDisplayVideoEvent"
         )
 
         // MARK: - Lifecycle
@@ -35,6 +40,7 @@ public class EMWDATModule: Module {
                 }
                 WearablesManager.shared.setEventEmitter(emitter)
                 CameraSessionManager.shared.setEventEmitter(emitter)
+                DisplayManager.shared.setEventEmitter(emitter)
             }
         }
 
@@ -42,6 +48,7 @@ public class EMWDATModule: Module {
             self.logger.info("Module", "Module destroyed")
             Task { @MainActor in
                 CameraSessionManager.shared.destroy()
+                DisplayManager.shared.destroy()
                 WearablesManager.shared.cleanup()
             }
         }
@@ -270,6 +277,62 @@ public class EMWDATModule: Module {
             Task { @MainActor in
                 CameraSessionManager.shared.removeCameraFromSession(sessionId: sessionId)
                 promise.resolve(nil)
+            }
+        }
+
+        // MARK: - Display
+
+        AsyncFunction("addDisplayToSession") { (sessionId: String, promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try DisplayManager.shared.addDisplayToSession(sessionId: sessionId)
+                    promise.resolve(nil)
+                } catch let error as DeviceSessionError {
+                    promise.reject("DISPLAY_ADD_FAILED", error.description)
+                } catch {
+                    promise.reject("DISPLAY_ADD_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("renderDisplay") { (sessionId: String, root: [String: Any], promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try await DisplayManager.shared.renderDisplay(sessionId: sessionId, root: root)
+                    promise.resolve(nil)
+                } catch let error as DisplayError {
+                    DisplayManager.shared.emitDisplayError(sessionId: sessionId, error: error)
+                    promise.reject("DISPLAY_RENDER_FAILED", error.description)
+                } catch {
+                    promise.reject("DISPLAY_RENDER_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("clearDisplay") { (sessionId: String, promise: Promise) in
+            Task { @MainActor in
+                do {
+                    try await DisplayManager.shared.clearDisplay(sessionId: sessionId)
+                    promise.resolve(nil)
+                } catch let error as DisplayError {
+                    DisplayManager.shared.emitDisplayError(sessionId: sessionId, error: error)
+                    promise.reject("DISPLAY_CLEAR_FAILED", error.description)
+                } catch {
+                    promise.reject("DISPLAY_CLEAR_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("removeDisplayFromSession") { (sessionId: String, promise: Promise) in
+            Task { @MainActor in
+                DisplayManager.shared.removeDisplayFromSession(sessionId: sessionId)
+                promise.resolve(nil)
+            }
+        }
+
+        AsyncFunction("getDisplayState") { (sessionId: String, promise: Promise) in
+            Task { @MainActor in
+                promise.resolve(DisplayManager.shared.getDisplayState(sessionId: sessionId) ?? "stopped")
             }
         }
 

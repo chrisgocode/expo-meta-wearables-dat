@@ -15,6 +15,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { DeviceCard } from "./components/device-card";
+import { DisplayPanel } from "./components/display-panel";
 import { EventLog } from "./components/event-log";
 import { Footer } from "./components/footer";
 import { Header } from "./components/header";
@@ -80,6 +81,7 @@ export default function App() {
     startSession,
     stopSession,
     addCameraToSession,
+    displayState,
     capturePhoto,
   } = useMetaWearables({
     logLevel,
@@ -262,6 +264,12 @@ export default function App() {
           </Section>
 
           {/* Mock Devices (DEBUG only) */}
+          <DisplayPanel
+            sessionId={currentSessionId}
+            displayState={displayState}
+            onEvent={(message) => addLogEntry(message)}
+          />
+
           {__DEV__ && <MockDevicePanel />}
 
           {/* Streaming */}

@@ -44,7 +44,11 @@ class EMWDATModule : Module() {
             "onCompatibilityChange",
             "onDeviceSessionStateChange",
             "onDeviceSessionError",
-            "onCapabilityStateChange"
+            "onCapabilityStateChange",
+            "onDisplayStateChange",
+            "onDisplayTap",
+            "onDisplayError",
+            "onDisplayVideoEvent"
         )
 
         OnCreate {
@@ -56,11 +60,14 @@ class EMWDATModule : Module() {
             WearablesManager.setScope(moduleScope)
             CameraSessionManager.setEventEmitter(emitter)
             CameraSessionManager.setScope(moduleScope)
+            DisplayManager.setEventEmitter(emitter)
+            DisplayManager.setScope(moduleScope)
         }
 
         OnDestroy {
             logger.info("Module", "Module destroyed")
             CameraSessionManager.destroy()
+            DisplayManager.destroy()
             WearablesManager.cleanup()
             moduleScope.cancel()
         }
@@ -193,6 +200,34 @@ class EMWDATModule : Module() {
         }
 
         // MARK: - Photo Capture
+
+        // Display
+
+        AsyncFunction("addDisplayToSession") { sessionId: String ->
+            DisplayManager.addDisplayToSession(sessionId)
+        }
+
+        AsyncFunction("renderDisplay") { sessionId: String, root: Map<String, Any?> ->
+            runBlocking {
+                DisplayManager.renderDisplay(sessionId, root)
+            }
+            null
+        }
+
+        AsyncFunction("clearDisplay") { sessionId: String ->
+            runBlocking {
+                DisplayManager.clearDisplay(sessionId)
+            }
+            null
+        }
+
+        AsyncFunction("removeDisplayFromSession") { sessionId: String ->
+            DisplayManager.removeDisplayFromSession(sessionId)
+        }
+
+        AsyncFunction("getDisplayState") { sessionId: String ->
+            DisplayManager.getDisplayState(sessionId) ?: "stopped"
+        }
 
         AsyncFunction("capturePhoto") { format: String ->
             val context = appContext.reactContext?.applicationContext

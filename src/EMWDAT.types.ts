@@ -332,6 +332,294 @@ export type DecoderError =
 export type DecoderErrorCode = DecoderError["type"];
 
 // =============================================================================
+// DISPLAY (Meta Ray-Ban Display — SDK 0.9)
+// =============================================================================
+
+/**
+ * Display capability lifecycle.
+ *
+ * Android adds `closed` (terminal) on top of the iOS set; iOS never emits it.
+ */
+export type DisplayState = "starting" | "started" | "stopping" | "stopped" | "closed";
+
+/**
+ * Display failures, normalised across platforms.
+ *
+ * The two SDK enums share only `deviceDisconnected`. iOS reports `deviceNotFound`,
+ * `connectionNotAvailable`, `invalidVideoUrl` and `displayError` (with a message);
+ * Android reports `invalidSessionState`, `renderingFailed` and `unexpectedError`.
+ * Platform-only codes surface as themselves rather than collapsing to `unexpectedError`.
+ */
+export type DisplayError =
+  | { type: "deviceDisconnected" }
+  | { type: "deviceNotFound" }
+  | { type: "connectionNotAvailable" }
+  | { type: "invalidVideoUrl" }
+  | { type: "invalidSessionState" }
+  | { type: "renderingFailed" }
+  | { type: "unexpectedError" }
+  | { type: "displayError"; message: string };
+
+export type DisplayErrorCode = DisplayError["type"];
+
+/** Video playback lifecycle on the glasses display. */
+export type DisplayVideoEventType = "unknown" | "started" | "ended" | "stopped" | "error";
+
+/** Video failure detail, present when {@link DisplayVideoEventType} is `error`. */
+export type DisplayVideoErrorType =
+  | "unknown"
+  | "urlInvalid"
+  | "alreadyPlaying"
+  | "playbackFailed"
+  | "notBound"
+  | "streamRejected"
+  | "invalidDimensions"
+  | "unexpectedError";
+
+// --- View tree ------------------------------------------------------------
+
+export type DisplayAlignment = "start" | "center" | "end" | "stretch";
+export type DisplayDirection = "column" | "row" | "columnReverse" | "rowReverse";
+export type DisplayTextStyle = "heading" | "body" | "meta";
+export type DisplayTextColor = "primary" | "secondary";
+export type DisplayButtonStyle = "primary" | "secondary" | "outline";
+export type DisplayButtonGroupAlignment = "start" | "center" | "end";
+export type DisplayImageSize = "icon" | "fill";
+export type DisplayCornerRadius = "none" | "small" | "medium";
+export type DisplayIconStyle = "filled" | "outline";
+export type DisplayBackground = "none" | "card";
+
+/**
+ * Padding in display points. Omitted edges default to 0.
+ *
+ * Edges are writing-direction relative, matching both SDKs: iOS uses `leading`/`trailing`
+ * and Android uses `paddingStart`/`paddingEnd`.
+ */
+export interface DisplayEdgeInsets {
+  top?: number;
+  bottom?: number;
+  leading?: number;
+  trailing?: number;
+}
+
+/** Layout properties every child of a flex node may set. */
+export interface DisplayFlexChildProps {
+  flexGrow?: number;
+  flexShrink?: number;
+  alignSelf?: DisplayAlignment;
+}
+
+/**
+ * System glyphs available to {@link DisplayIconNode} and {@link DisplayButtonNode}.
+ *
+ * Generated from the SDK 0.9 artifacts; identical on iOS and Android (116 values).
+ */
+export type IconName =
+  | "airplane"
+  | "arrowDownShallowU"
+  | "arrowLeft"
+  | "arrowRight"
+  | "arrowULeft"
+  | "arrowUpShallowU"
+  | "avatar"
+  | "avatarOff"
+  | "bedSide"
+  | "bell"
+  | "bellDiagonalRightDot"
+  | "bellOff"
+  | "bikeShare"
+  | "bug"
+  | "bullhorn"
+  | "bus"
+  | "calendar"
+  | "campfire"
+  | "caretDown"
+  | "caretLeft"
+  | "caretRight"
+  | "caretUp"
+  | "carFrontView"
+  | "cart"
+  | "checkmark"
+  | "checkmarkCircle"
+  | "circle8RaysLarge"
+  | "circleHandle"
+  | "clock"
+  | "cloud"
+  | "cloudCrescentMoon"
+  | "cloudDotFourRays"
+  | "cloudFiveDashes"
+  | "cloudHookSwirl"
+  | "cloudLightning"
+  | "cocktailGlass"
+  | "code"
+  | "coffeeCup"
+  | "compassNorthUpRed"
+  | "containerWithLid"
+  | "crossBriefcase"
+  | "dropper"
+  | "envelopeOpen"
+  | "exclamationCircle"
+  | "exclamationTriangle"
+  | "eye"
+  | "forkKnife"
+  | "fourArcsUpFilled"
+  | "fourArcsUpGrayscale"
+  | "fourCornerFrame"
+  | "gear"
+  | "globeWesternHemisphere"
+  | "graduationCap"
+  | "hashtag"
+  | "headphones"
+  | "heart"
+  | "house"
+  | "iCircle"
+  | "lightBulb"
+  | "magicWand"
+  | "metaAi"
+  | "mountainSquare"
+  | "mountainSquareStacked"
+  | "museumBuilding"
+  | "musicNote"
+  | "nineSquaresGrid"
+  | "padlockClosed"
+  | "padlockOpen"
+  | "palette"
+  | "paperAirplane"
+  | "pencil"
+  | "pencilSquare"
+  | "person"
+  | "personCircle"
+  | "phone"
+  | "phoneHandsetArrowDownLeft"
+  | "phoneHandsetArrowUpRight"
+  | "phoneSlash"
+  | "pizzaSlice"
+  | "plus"
+  | "plusCircle"
+  | "shoppingBag"
+  | "slidersHorizontal"
+  | "smartGlasses"
+  | "smileyCircle"
+  | "speakerOff"
+  | "speakerWithOneArc"
+  | "speakerWithThreeArcs"
+  | "speakerWithTwoArcs"
+  | "speechBubble"
+  | "speechBubbleOff"
+  | "stadium"
+  | "star"
+  | "starCircleTriangleAi"
+  | "taxi"
+  | "threeDotsHorizontal"
+  | "threeDotSpeechBubble"
+  | "threeHorizontalLines"
+  | "threeHorizontalLinesStackedDescending"
+  | "threePeopleOverlapping"
+  | "train"
+  | "tree"
+  | "triangleLeftVerticalLine"
+  | "triangleRight"
+  | "triangleRightCircle"
+  | "triangleRightVerticalLine"
+  | "twoArrowsClockwise"
+  | "twoLinesParallel"
+  | "twoSquaresStackedRightDown"
+  | "twoTrianglesLeft"
+  | "twoTrianglesRight"
+  | "videoCamera"
+  | "videoCameraOff"
+  | "wristband"
+  | "wristbandSlash"
+  | "x";
+
+export interface DisplayFlexNode extends DisplayFlexChildProps {
+  type: "flex";
+  direction?: DisplayDirection;
+  spacing?: number;
+  alignment?: DisplayAlignment;
+  crossAlignment?: DisplayAlignment;
+  wrap?: boolean;
+  padding?: DisplayEdgeInsets;
+  background?: DisplayBackground;
+  /** Flex nodes are tappable. Wrap text in one to make the text tappable. */
+  onTap?: () => void;
+  children: DisplayChildNode[];
+}
+
+export interface DisplayTextNode extends DisplayFlexChildProps {
+  type: "text";
+  content: string;
+  style?: DisplayTextStyle;
+  color?: DisplayTextColor;
+}
+
+export interface DisplayButtonNode extends DisplayFlexChildProps {
+  type: "button";
+  label: string;
+  style?: DisplayButtonStyle;
+  iconName?: IconName;
+  onTap?: () => void;
+}
+
+export interface DisplayImageNode extends DisplayFlexChildProps {
+  type: "image";
+  uri: string;
+  sizePreset?: DisplayImageSize;
+  cornerRadius?: DisplayCornerRadius;
+}
+
+export interface DisplayIconNode extends DisplayFlexChildProps {
+  type: "icon";
+  name: IconName;
+  style?: DisplayIconStyle;
+}
+
+export interface DisplayButtonGroupNode extends DisplayFlexChildProps {
+  type: "buttonGroup";
+  alignment?: DisplayButtonGroupAlignment;
+  buttons: DisplayButtonNode[];
+}
+
+/** Full-screen video. Root-only — it cannot be a sibling of other nodes. */
+export interface DisplayVideoNode {
+  type: "video";
+  uri: string;
+  codec?: "mp4";
+}
+
+/** Anything that may appear inside a flex node. */
+export type DisplayChildNode =
+  | DisplayFlexNode
+  | DisplayTextNode
+  | DisplayButtonNode
+  | DisplayImageNode
+  | DisplayIconNode
+  | DisplayButtonGroupNode;
+
+/**
+ * What {@link renderDisplay} accepts.
+ *
+ * Only `flex` and `video` may be the root: on iOS only `FlexBox` and `VideoPlayer`
+ * conform to `DisplayableView`, and Android's `ContentScope` exposes only those two.
+ */
+export type DisplayRoot = DisplayFlexNode | DisplayVideoNode;
+
+/** Any node in a display tree. */
+export type DisplayNode = DisplayRoot | DisplayChildNode;
+
+/**
+ * Wire form of a display tree: the same shape with `onTap` closures replaced by
+ * generated `tapId` strings. Produced by `serializeDisplayTree`; not written by hand.
+ */
+export type SerializedDisplayNode = {
+  type: DisplayNode["type"];
+  tapId?: string;
+  children?: SerializedDisplayNode[];
+  buttons?: SerializedDisplayNode[];
+  [key: string]: unknown;
+};
+
+// =============================================================================
 // NATIVE MODULE EVENTS
 // =============================================================================
 
@@ -361,6 +649,14 @@ export type EMWDATModuleEvents = {
     message?: string;
   }) => void;
   onCapabilityStateChange: (payload: { sessionId: string; state: CapabilityState }) => void;
+  onDisplayStateChange: (payload: { sessionId: string; state: DisplayState }) => void;
+  onDisplayTap: (payload: { sessionId: string; tapId: string }) => void;
+  onDisplayError: (payload: { sessionId: string } & DisplayError) => void;
+  onDisplayVideoEvent: (payload: {
+    sessionId: string;
+    event: DisplayVideoEventType;
+    errorType?: DisplayVideoErrorType;
+  }) => void;
 };
 
 export type EMWDATEventName = keyof EMWDATModuleEvents;
@@ -388,6 +684,13 @@ export interface MetaWearablesCallbacks {
     message?: string
   ) => void;
   onCapabilityStateChange?: (sessionId: string, state: CapabilityState) => void;
+  onDisplayStateChange?: (state: DisplayState, sessionId: string) => void;
+  onDisplayError?: (error: DisplayError, sessionId: string) => void;
+  onDisplayVideoEvent?: (
+    event: DisplayVideoEventType,
+    errorType: DisplayVideoErrorType | undefined,
+    sessionId: string
+  ) => void;
 }
 
 // =============================================================================
@@ -445,6 +748,14 @@ export interface UseMetaWearablesReturn {
   /** @deprecated Renamed to {@link UseMetaWearablesReturn.removeCameraFromSession} for SDK 0.9. */
   removeStreamFromSession: (sessionId: string) => Promise<void>;
   capturePhoto: (format?: PhotoCaptureFormat) => Promise<void>;
+
+  // Actions — display
+  addDisplayToSession: (sessionId: string) => Promise<void>;
+  renderDisplay: (sessionId: string, root: DisplayRoot) => Promise<void>;
+  clearDisplay: (sessionId: string) => Promise<void>;
+  removeDisplayFromSession: (sessionId: string) => Promise<void>;
+  getDisplayState: (sessionId: string) => Promise<DisplayState>;
+  displayState: DisplayState | null;
 
   // Actions — mock device kit
   enableMockDeviceKit: (config?: MockDeviceKitConfig) => Promise<void>;

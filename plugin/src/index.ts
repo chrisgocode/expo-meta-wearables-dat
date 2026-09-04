@@ -71,12 +71,12 @@ const withEMWDAT: ConfigPlugin<EMWDATPluginProps> = (config, props) => {
       }
     }
 
-    // Embed MWDATCamera & MWDATCore dynamic frameworks.
+    // Embed the MWDAT dynamic frameworks.
     // The SPM products are linked via spm_dependency in the podspec but CocoaPods
     // doesn't embed them — we add a shell script build phase to copy + sign them.
     const target = project.getFirstTarget().uuid;
     const shellScript = `
-FRAMEWORKS=("MWDATCamera" "MWDATCore" "MWDATMockDevice")
+FRAMEWORKS=("MWDATCamera" "MWDATCore" "MWDATDisplay" "MWDATMockDevice")
 for fw in "\${FRAMEWORKS[@]}"; do
   SRC="\${BUILT_PRODUCTS_DIR}/\${fw}.framework"
   DST="\${BUILT_PRODUCTS_DIR}/\${FRAMEWORKS_FOLDER_PATH}/\${fw}.framework"
@@ -109,11 +109,13 @@ done
       inputPaths: [
         '"${BUILT_PRODUCTS_DIR}/MWDATCamera.framework"',
         '"${BUILT_PRODUCTS_DIR}/MWDATCore.framework"',
+        '"${BUILT_PRODUCTS_DIR}/MWDATDisplay.framework"',
         '"${BUILT_PRODUCTS_DIR}/MWDATMockDevice.framework"',
       ],
       outputPaths: [
         '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATCamera.framework"',
         '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATCore.framework"',
+        '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATDisplay.framework"',
         '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATMockDevice.framework"',
       ],
     });

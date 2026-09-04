@@ -31,6 +31,12 @@ export {
   addStreamToSession,
   removeStreamFromSession,
   capturePhoto,
+  // Display
+  addDisplayToSession,
+  renderDisplay,
+  clearDisplay,
+  removeDisplayFromSession,
+  getDisplayState,
   // Mock device kit
   enableMockDeviceKit,
   disableMockDeviceKit,

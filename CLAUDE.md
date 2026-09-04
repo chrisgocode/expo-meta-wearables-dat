@@ -15,8 +15,8 @@ pnpm lint     # ESLint
 ## Structure
 
 - `src/` — TS API: module (`EMWDATModule.ts`), types, `useMetaWearables` hook, `EMWDATStreamView` native view. Web stubs in `.web.ts` files.
-- `ios/` — Swift: `EMWDATModule.swift` (module def), `WearablesManager.swift` + `CameraSessionManager.swift` (@MainActor singletons), `EMWDATStreamView.swift` (video), `HEVCDecoder.swift`, `MockDeviceManager.swift`, `EMWDATAppDelegateSubscriber.swift` (deep links). SDK linked via SPM in `EMWDAT.podspec` (min iOS 17.2).
-- `android/` — Kotlin: `EMWDATModule.kt` (module def), `WearablesManager.kt` + `CameraSessionManager.kt` (singletons), `MockDeviceManager.kt`, `EMWDATView.kt` (video), `EMWDATLogger.kt`. SDK from GitHub Packages Maven (`com.meta.wearable:mwdat-*:0.9.0`).
+- `ios/` — Swift: `EMWDATModule.swift` (module def), `WearablesManager.swift` + `CameraSessionManager.swift` + `DisplayManager.swift` (@MainActor singletons), `EMWDATStreamView.swift` (video), `HEVCDecoder.swift`, `MockDeviceManager.swift`, `EMWDATAppDelegateSubscriber.swift` (deep links). SDK linked via SPM in `EMWDAT.podspec` (min iOS 17.2).
+- `android/` — Kotlin: `EMWDATModule.kt` (module def), `WearablesManager.kt` + `CameraSessionManager.kt` + `DisplayManager.kt` (singletons), `MockDeviceManager.kt`, `EMWDATView.kt` (video), `EMWDATLogger.kt`. SDK from GitHub Packages Maven (`com.meta.wearable:mwdat-*:0.9.0`).
 - `plugin/` — Config plugin: Info.plist, Xcode, Podfile setup for iOS; AndroidManifest meta-data + intent-filter for Android. Entry: `app.plugin.js`.
 - `example/` — Standalone Expo app with own `node_modules`. Linked via metro `watchFolders`.
 
@@ -40,6 +40,13 @@ pnpm lint     # ESLint
 - iOS publisher subscriptions use `.listen { }` → `AnyListenerToken` (cancel with `await token.cancel()`)
 - Android uses `DatResult` everywhere; failure lambdas take `(error, cause)`
 - JS API keeps `addCameraToSession` / `removeCameraFromSession`; the old `addStreamToSession` / `removeStreamFromSession` names remain as deprecated aliases
+- Display (`mwdat-display` / `MWDATDisplay`): `session.addDisplay()` → `Display`, then
+  `send(view)` (iOS) / `sendContent { }` (Android) replaces the **entire** screen — no partial
+  updates. iOS needs an explicit `display.start()`; Android starts on attach
+- Display trees cross the bridge as plain JSON: `src/displayTree.ts` strips `onTap` closures into
+  a per-session registry and replaces it wholesale on each render, so taps for a superseded tree
+  are dropped rather than misrouted
+- Only `flex` and `button` accept taps; only `flex` and `video` may be a display root
 
 ## Conventions
 

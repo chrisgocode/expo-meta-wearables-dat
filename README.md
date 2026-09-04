@@ -24,6 +24,7 @@ Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart gl
 - Permission management (camera)
 - Device discovery and link state monitoring
 - Session-based camera streaming with native view
+- Display rendering on Meta Ray-Ban Display (declarative view tree with tap handlers)
 - Compressed HEVC video streaming (Android)
 - Photo capture (JPEG / HEIC)
 - `useMetaWearables` React hook with full state management
@@ -47,7 +48,7 @@ Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart gl
 
 - Ray-Ban Meta (verified)
 - Ray-Ban Meta Optics (untested)
-- Meta Ray-Ban Display (untested — display capability is not wrapped by this module)
+- Meta Ray-Ban Display (display capability wrapped; untested on hardware)
 - Oakley Meta HSTN / Vanguard (untested)
 - Meta Glasses (untested)
 
@@ -213,22 +214,26 @@ React hook that manages the full lifecycle of Meta Wearables integration.
 
 **Options** (`UseMetaWearablesOptions`):
 
-| Option                       | Type                                   | Default  | Description                      |
-| ---------------------------- | -------------------------------------- | -------- | -------------------------------- |
-| `autoConfig`                 | `boolean`                              | `true`   | Auto-call `configure()` on mount |
-| `logLevel`                   | `LogLevel`                             | `"info"` | Initial log level                |
-| `onRegistrationStateChange`  | `(state) => void`                      | —        | Registration state changed       |
-| `onDevicesChange`            | `(devices) => void`                    | —        | Device list updated              |
-| `onLinkStateChange`          | `(deviceId, linkState) => void`        | —        | Device connection changed        |
-| `onStreamStateChange`        | `(state) => void`                      | —        | Stream state changed             |
-| `onVideoFrame`               | `(metadata) => void`                   | —        | Video frame received             |
-| `onPhotoCaptured`            | `(photo) => void`                      | —        | Photo captured                   |
-| `onStreamError`              | `(error) => void`                      | —        | Stream error occurred            |
-| `onPermissionStatusChange`   | `(permission, status) => void`         | —        | Permission status changed        |
-| `onCompatibilityChange`      | `(deviceId, compatibility) => void`    | —        | Device compatibility changed     |
-| `onDeviceSessionStateChange` | `(sessionId, state) => void`           | —        | Device session state changed     |
-| `onDeviceSessionError`       | `(sessionId, error, message?) => void` | —        | Device session error             |
-| `onCapabilityStateChange`    | `(sessionId, state) => void`           | —        | Capability state changed         |
+| Option                       | Type                                                                     | Default  | Description                      |
+| ---------------------------- | ------------------------------------------------------------------------ | -------- | -------------------------------- |
+| `autoConfig`                 | `boolean`                                                                | `true`   | Auto-call `configure()` on mount |
+| `logLevel`                   | `LogLevel`                                                               | `"info"` | Initial log level                |
+| `onRegistrationStateChange`  | `(state) => void`                                                        | —        | Registration state changed       |
+| `onDevicesChange`            | `(devices) => void`                                                      | —        | Device list updated              |
+| `onLinkStateChange`          | `(deviceId, linkState) => void`                                          | —        | Device connection changed        |
+| `onStreamStateChange`        | `(state) => void`                                                        | —        | Stream state changed             |
+| `onVideoFrame`               | `(metadata) => void`                                                     | —        | Video frame received             |
+| `onPhotoCaptured`            | `(photo) => void`                                                        | —        | Photo captured                   |
+| `onStreamError`              | `(error) => void`                                                        | —        | Stream error occurred            |
+| `onPermissionStatusChange`   | `(permission, status) => void`                                           | —        | Permission status changed        |
+| `onCompatibilityChange`      | `(deviceId, compatibility) => void`                                      | —        | Device compatibility changed     |
+| `onDeviceSessionStateChange` | `(sessionId, state) => void`                                             | —        | Device session state changed     |
+| `onDeviceSessionError`       | `(sessionId, error, message?) => void`                                   | —        | Device session error             |
+| `onDisplayStateChange`       | `{ sessionId: string; state: DisplayState }`                             |
+| `onDisplayTap`               | `{ sessionId: string; tapId: string }` (routed to your `onTap` closures) |
+| `onDisplayError`             | `{ sessionId: string } & DisplayError`                                   |
+| `onDisplayVideoEvent`        | `{ sessionId, event: DisplayVideoEventType, errorType? }`                |
+| `onCapabilityStateChange`    | `(sessionId, state) => void`                                             | —        | Capability state changed         |
 
 **Returned state:**
 
@@ -269,6 +274,11 @@ React hook that manages the full lifecycle of Meta Wearables integration.
 | `openFirmwareUpdate`                | `() => Promise<void>`                       | Open Meta AI firmware update       |
 | `openDATGlassesAppUpdate`           | `() => Promise<void>`                       | Open Meta AI DAT app update        |
 | `capturePhoto`                      | `(format?) => Promise<void>`                | Capture photo                      |
+| `addDisplayToSession`               | `(sessionId) => Promise<void>`              | Attach the display capability      |
+| `renderDisplay`                     | `(sessionId, root) => Promise<void>`        | Replace the whole glasses screen   |
+| `clearDisplay`                      | `(sessionId) => Promise<void>`              | Clear the screen, stay attached    |
+| `removeDisplayFromSession`          | `(sessionId) => Promise<void>`              | Detach the display capability      |
+| `getDisplayState`                   | `(sessionId) => Promise<DisplayState>`      | Read the current display state     |
 | `enableMockDeviceKit`               | `(config?) => Promise<void>`                | Enable mock device kit             |
 | `disableMockDeviceKit`              | `() => Promise<void>`                       | Disable mock device kit            |
 | `isMockDeviceKitEnabled`            | `() => Promise<boolean>`                    | Check if mock kit is enabled       |
@@ -368,6 +378,11 @@ Key types exported from the package:
 - `Device` — `{ identifier, name, linkState, deviceType, compatibility, supportsDisplay }`
 - `DeviceType` — `"rayBanMeta"` \| `"oakleyMetaHSTN"` \| `"oakleyMetaVanguard"` \| `"metaRayBanDisplay"` \| `"rayBanMetaOptics"` \| `"metaGlasses"` \| `"unknown"`
 - `LinkState` — `"connected"` \| `"disconnected"` \| `"connecting"`
+- `DisplayState` — `"starting"` \| `"started"` \| `"stopping"` \| `"stopped"` \| `"closed"` (Android only)
+- `DisplayRoot` — `DisplayFlexNode` \| `DisplayVideoNode` (only these two may be the root)
+- `DisplayChildNode` — flex \| text \| button \| image \| icon \| buttonGroup
+- `IconName` — 116 system glyphs, identical on both platforms
+- `DisplayError` — `deviceDisconnected` \| `deviceNotFound` \| `connectionNotAvailable` \| `invalidVideoUrl` \| `invalidSessionState` \| `renderingFailed` \| `unexpectedError` \| `displayError`
 - `Compatibility` — `"compatible"` \| `"undefined"` \| `"deviceUpdateRequired"` \| `"sdkUpdateRequired"`
 - `DeviceSessionState` — `"idle"` \| `"starting"` \| `"started"` \| `"paused"` \| `"stopping"` \| `"stopped"`
 - `DeviceSessionErrorCode` — `"noEligibleDevice"` \| `"sessionAlreadyStopped"` \| `"sessionAlreadyExists"` \| `"sessionIdle"` \| `"capabilityAlreadyActive"` \| `"capabilityNotFound"` \| `"unexpectedError"`
@@ -389,6 +404,59 @@ Key types exported from the package:
 - Error code types: `WearablesErrorCode`, `RegistrationErrorCode`, `UnregistrationErrorCode`, `PermissionErrorCode`, `DecoderError`
 
 See [`src/EMWDAT.types.ts`](./src/EMWDAT.types.ts) for the full list.
+
+### Display (Meta Ray-Ban Display)
+
+Build a tree of plain objects and send it. Each render **replaces the entire screen** — the SDK
+has no partial update and the glasses hold no state, so your app is the source of truth.
+
+```tsx
+import { addDisplayToSession, renderDisplay } from "@chrisgocode/expo-meta-wearables-dat";
+import type { DisplayRoot } from "@chrisgocode/expo-meta-wearables-dat";
+
+const card = (step: number): DisplayRoot => ({
+  type: "flex",
+  direction: "column",
+  spacing: 12,
+  padding: { top: 24, bottom: 24, leading: 24, trailing: 24 },
+  children: [
+    { type: "text", content: `Step ${step + 1}`, style: "meta" },
+    { type: "text", content: STEPS[step], style: "heading" },
+    {
+      type: "buttonGroup",
+      alignment: "center",
+      buttons: [
+        { type: "button", label: "Back", style: "outline", onTap: () => show(step - 1) },
+        { type: "button", label: "Next", style: "primary", onTap: () => show(step + 1) },
+      ],
+    },
+  ],
+});
+
+await addDisplayToSession(sessionId);
+await renderDisplay(sessionId, card(0));
+```
+
+`onTap` closures are called directly — the module assigns each handler an id, strips the
+closures before crossing the bridge, and routes `onDisplayTap` back to your function.
+
+**Constraints worth knowing before you design a screen:**
+
+- **Root must be `flex` or `video`.** Only `FlexBox` and `VideoPlayer` are renderable at the top
+  level; `video` has no siblings. Enforced by the `DisplayRoot` type.
+- **Only `flex` and `button` are tappable.** Text, image and icon take no handler on either
+  platform — wrap them in a `flex` with `onTap`. Passing `onTap` elsewhere throws.
+- **Handler identity does not survive a render.** Taps for a superseded tree are dropped, not
+  misrouted.
+- The display is **600×600**, fixed, with no scrolling.
+- Video is MP4, under 400px per side and ≤70,000 total pixels.
+- **The back gesture (two-finger temple tap) ends the display session.** It arrives as
+  `onDisplayStateChange` → `stopped`, not as a tap — handle disappearance you did not initiate.
+- Bluetooth-bound: large images and deep trees lag. Render coarsely.
+- `renderDisplay` resolving means the SDK accepted the tree, not that it is visible.
+
+Padding edges are writing-direction relative (`leading` / `trailing`), matching iOS `EdgeInsets`
+and Android `paddingStart` / `paddingEnd`.
 
 ### Mock Device API (Testing)
 
@@ -580,6 +648,7 @@ See [SECURITY.md](./SECURITY.md) for the vulnerability reporting process.
 
 ## Roadmap
 
+- Speaker playback / microphone capability
 - Background streaming (pending SDK support)
 - New Architecture validation
 

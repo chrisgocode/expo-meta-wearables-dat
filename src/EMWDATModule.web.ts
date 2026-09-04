@@ -69,6 +69,23 @@ class EMWDATWebModule extends NativeModule<EMWDATModuleEvents> {
     unsupported();
   }
 
+  // Display
+  addDisplayToSession(): Promise<void> {
+    unsupported();
+  }
+  renderDisplay(): Promise<void> {
+    unsupported();
+  }
+  clearDisplay(): Promise<void> {
+    unsupported();
+  }
+  removeDisplayFromSession(): Promise<void> {
+    unsupported();
+  }
+  getDisplayState(): Promise<string> {
+    unsupported();
+  }
+
   // Mock device kit
   enableMockDeviceKit(): Promise<void> {
     unsupported();
@@ -205,6 +222,23 @@ export async function removeStreamFromSession(): Promise<void> {
   unsupported();
 }
 export async function capturePhoto(): Promise<void> {
+  unsupported();
+}
+
+// Display
+export async function addDisplayToSession(): Promise<void> {
+  unsupported();
+}
+export async function renderDisplay(): Promise<void> {
+  unsupported();
+}
+export async function clearDisplay(): Promise<void> {
+  unsupported();
+}
+export async function removeDisplayFromSession(): Promise<void> {
+  unsupported();
+}
+export async function getDisplayState(): Promise<string> {
   unsupported();
 }
 

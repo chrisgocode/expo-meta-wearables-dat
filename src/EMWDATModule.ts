@@ -4,6 +4,8 @@ import { Platform } from "react-native";
 import type {
   CameraFacing,
   Device,
+  DisplayRoot,
+  DisplayState,
   EMWDATModuleEvents,
   LogLevel,
   MockDeviceKitConfig,
@@ -13,7 +15,9 @@ import type {
   GlassesModel,
   RegistrationState,
   StreamConfiguration,
+  SerializedDisplayNode,
 } from "./EMWDAT.types";
+import { serializeDisplayTree, assertValidDisplayRoot, type TapRegistry } from "./displayTree";
 
 /**
  * Raw native module interface.
@@ -33,6 +37,13 @@ declare class EMWDATNativeModule extends NativeModule<EMWDATModuleEvents> {
   getDevice(identifier: string): Promise<Device | null>;
   openFirmwareUpdate(): Promise<void>;
   openDATGlassesAppUpdate(): Promise<void>;
+
+  // Display
+  addDisplayToSession(sessionId: string): Promise<void>;
+  renderDisplay(sessionId: string, root: SerializedDisplayNode): Promise<void>;
+  clearDisplay(sessionId: string): Promise<void>;
+  removeDisplayFromSession(sessionId: string): Promise<void>;
+  getDisplayState(sessionId: string): Promise<string>;
 
   // Session-based streaming
   createSession(deviceId?: string): Promise<string>;
@@ -205,6 +216,70 @@ export async function removeStreamFromSession(sessionId: string): Promise<void> 
 /** Capture a photo from the active stream. Defaults to JPEG format. */
 export async function capturePhoto(format?: PhotoCaptureFormat): Promise<void> {
   return EMWDATModule.capturePhoto(format ?? "jpeg");
+}
+
+// =============================================================================
+// Display (Meta Ray-Ban Display)
+// =============================================================================
+
+/**
+ * Tap handlers for the tree most recently rendered to each session.
+ *
+ * Replaced wholesale on every render: the SDK has no partial update, so a tree that has
+ * been superseded can no longer receive taps. Taps for unknown ids are dropped.
+ */
+const displayTapRegistries = new Map<string, TapRegistry>();
+
+let displayTapSubscription: { remove: () => void } | null = null;
+
+function ensureDisplayTapRouting(): void {
+  if (displayTapSubscription) return;
+  displayTapSubscription = EMWDATModule.addListener("onDisplayTap", ({ sessionId, tapId }) => {
+    displayTapRegistries.get(sessionId)?.get(tapId)?.();
+  });
+}
+
+/**
+ * Attach the display capability to a session.
+ *
+ * Hides a lifecycle difference: iOS requires an explicit `start()` after attaching, Android
+ * starts on attach. One display per session; the session must already be started.
+ */
+export async function addDisplayToSession(sessionId: string): Promise<void> {
+  ensureDisplayTapRouting();
+  return EMWDATModule.addDisplayToSession(sessionId);
+}
+
+/**
+ * Render a tree to the glasses, replacing whatever is on screen.
+ *
+ * There is no partial update — re-render the whole tree. Tap handler identity does not
+ * survive a render, so do not hold ids across calls.
+ *
+ * Resolving means the SDK accepted the tree, not that it is visible yet.
+ */
+export async function renderDisplay(sessionId: string, root: DisplayRoot): Promise<void> {
+  assertValidDisplayRoot(root);
+  const { root: serialized, handlers } = serializeDisplayTree(root);
+  displayTapRegistries.set(sessionId, handlers);
+  return EMWDATModule.renderDisplay(sessionId, serialized);
+}
+
+/** Clear the display without detaching the capability. */
+export async function clearDisplay(sessionId: string): Promise<void> {
+  displayTapRegistries.set(sessionId, new Map());
+  return EMWDATModule.clearDisplay(sessionId);
+}
+
+/** Detach the display capability, freeing the session's capability slot. */
+export async function removeDisplayFromSession(sessionId: string): Promise<void> {
+  displayTapRegistries.delete(sessionId);
+  return EMWDATModule.removeDisplayFromSession(sessionId);
+}
+
+/** Current display state for a session. */
+export async function getDisplayState(sessionId: string): Promise<DisplayState> {
+  return (await EMWDATModule.getDisplayState(sessionId)) as DisplayState;
 }
 
 // =============================================================================
