@@ -1,3 +1,23 @@
+# [2.0.0](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v1.3.0...v2.0.0) (2026-09-04)
+
+### Features
+
+- migrate to Meta Wearables DAT SDK 0.9 and publish under [@chrisgocode](https://github.com/chrisgocode) ([b88726b](https://github.com/chrisgocode/expo-meta-wearables-dat/commit/b88726bcc32839b9f28c5e70f12d79e2a405c333))
+
+### BREAKING CHANGES
+
+- iOS deployment target raised from 16.0 to 17.2, required by
+  DAT SDK 0.9.
+- streaming now goes through the consolidated Camera capability.
+  DeviceSession.addStream() was removed in 0.9; sessions call addCamera() and
+  stream via camera.stream. addStreamToSession/removeStreamFromSession remain as
+  deprecated aliases of addCameraToSession/removeCameraFromSession.
+- onStreamStateChange now carries { sessionId, state }, and the
+  useMetaWearables callback signature is (state, sessionId).
+- skipAppLaunch was removed from StreamConfiguration.
+- the package is now published as
+  @chrisgocode/expo-meta-wearables-dat.
+
 # [1.3.0](https://github.com/circus-kitchens/expo-meta-wearables-dat/compare/v1.2.0...v1.3.0) (2026-04-21)
 
 ### Features
