@@ -1,3 +1,9 @@
+# [2.1.0](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.0.0...v2.1.0) (2026-09-04)
+
+### Features
+
+- wrap the Display capability for Meta Ray-Ban Display ([692f179](https://github.com/chrisgocode/expo-meta-wearables-dat/commit/692f1796c2bcf2b8e21fca8d2c208952ed2b616d))
+
 # [2.0.0](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v1.3.0...v2.0.0) (2026-09-04)
 
 ### Features
