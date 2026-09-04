@@ -49,7 +49,7 @@ In `libs.versions.toml`:
 
 ```toml
 [versions]
-mwdat = "0.8.0"
+mwdat = "0.9.0"
 
 [libraries]
 mwdat-core = { group = "com.meta.wearable", name = "mwdat-core", version.ref = "mwdat" }

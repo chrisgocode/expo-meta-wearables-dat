@@ -362,11 +362,11 @@ Native view component for rendering the camera stream.
 Key types exported from the package:
 
 - `LogLevel` — `"debug"` \| `"info"` \| `"warn"` \| `"error"` \| `"none"`
-- `RegistrationState` — `"unavailable"` \| `"available"` \| `"registering"` \| `"registered"`
+- `RegistrationState` — `"unavailable"` \| `"available"` \| `"registering"` \| `"registered"` \| `"unregistering"`
 - `Permission` — `"camera"`
 - `PermissionStatus` — `"granted"` \| `"denied"`
-- `Device` — `{ identifier, name, linkState, deviceType, compatibility }`
-- `DeviceType` — `"rayBanMeta"` \| `"oakleyMetaHSTN"` \| `"oakleyMetaVanguard"` \| `"metaRayBanDisplay"` \| `"rayBanMetaOptics"` \| `"unknown"`
+- `Device` — `{ identifier, name, linkState, deviceType, compatibility, supportsDisplay }`
+- `DeviceType` — `"rayBanMeta"` \| `"oakleyMetaHSTN"` \| `"oakleyMetaVanguard"` \| `"metaRayBanDisplay"` \| `"rayBanMetaOptics"` \| `"metaGlasses"` \| `"unknown"`
 - `LinkState` — `"connected"` \| `"disconnected"` \| `"connecting"`
 - `Compatibility` — `"compatible"` \| `"undefined"` \| `"deviceUpdateRequired"` \| `"sdkUpdateRequired"`
 - `DeviceSessionState` — `"idle"` \| `"starting"` \| `"started"` \| `"paused"` \| `"stopping"` \| `"stopped"`
