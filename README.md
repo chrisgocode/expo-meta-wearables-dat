@@ -1,8 +1,8 @@
 # @chrisgocode/expo-meta-wearables-dat
 
-[![npm version](https://img.shields.io/npm/v/%40chrisgocode%2Fexpo-meta-wearables-dat)](https://www.npmjs.com/package/@chrisgocode/expo-meta-wearables-dat)
+[![npm version](https://img.shields.io/npm/v/@chrisgocode/expo-meta-wearables-dat)](https://www.npmjs.com/package/@chrisgocode/expo-meta-wearables-dat)
 [![CI](https://github.com/chrisgocode/expo-meta-wearables-dat/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisgocode/expo-meta-wearables-dat/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/%40chrisgocode%2Fexpo-meta-wearables-dat)](./LICENSE)
+[![license](https://img.shields.io/npm/l/@chrisgocode/expo-meta-wearables-dat)](./LICENSE)
 ![platform: iOS | Android](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
 
 Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart glasses) into React Native apps. Provides device registration, permissions, session-based camera streaming, photo capture, and a React hook — bridged from the official Meta Wearables DAT SDK 0.9 on both iOS and Android.
