@@ -1,3 +1,9 @@
+## [2.1.1](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.1.0...v2.1.1) (2026-09-12)
+
+### Bug Fixes
+
+- register iOS Expo module metadata ([38f8960](https://github.com/chrisgocode/expo-meta-wearables-dat/commit/38f8960422d74cc4970fb02ed886f0f600e0ca86))
+
 # [2.1.0](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.0.0...v2.1.0) (2026-09-04)
 
 ### Features
