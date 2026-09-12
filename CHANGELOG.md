@@ -1,3 +1,9 @@
+## [2.1.2](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.1.1...v2.1.2) (2026-09-12)
+
+### Bug Fixes
+
+- register iOS podspec ([4e482a0](https://github.com/chrisgocode/expo-meta-wearables-dat/commit/4e482a0607f838f2121360f0823b820883d714d2))
+
 ## [2.1.1](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.1.0...v2.1.1) (2026-09-12)
 
 ### Bug Fixes
