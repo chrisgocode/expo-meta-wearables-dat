@@ -1,6 +1,7 @@
 {
-  "platforms": ["ios", "android", "web"],
-  "ios": {
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "podspecPath": "ios/EMWDAT.podspec",
     "modules": ["EMWDATModule"],
     "appDelegateSubscribers": ["EMWDATAppDelegateSubscriber"]
   },
