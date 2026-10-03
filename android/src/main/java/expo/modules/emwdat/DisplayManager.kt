@@ -2,6 +2,7 @@ package expo.modules.emwdat
 
 import com.meta.wearable.dat.display.Display
 import com.meta.wearable.dat.display.addDisplay
+import com.meta.wearable.dat.display.views.ActionRole
 import com.meta.wearable.dat.display.removeDisplay
 import com.meta.wearable.dat.display.types.DisplayConfiguration
 import com.meta.wearable.dat.display.types.DisplayError
@@ -248,6 +249,7 @@ object DisplayManager {
                     ?: throw IllegalArgumentException("button node is missing \"label\""),
                 style = mapButtonStyle(node["style"] as? String),
                 iconName = mapIconName(node["iconName"] as? String),
+                actionRole = if (node["actionRole"] == "primary") ActionRole.PRIMARY else null,
                 onClick = tapHandler(sessionId, node) ?: {},
                 flexGrow = floatOf(node["flexGrow"]),
                 flexShrink = floatOf(node["flexShrink"], default = 1f),
@@ -300,6 +302,7 @@ object DisplayManager {
                 ?: throw IllegalArgumentException("button node is missing \"label\""),
             style = mapButtonStyle(node["style"] as? String),
             iconName = mapIconName(node["iconName"] as? String),
+            actionRole = if (node["actionRole"] == "primary") ActionRole.PRIMARY else null,
             onClick = tapHandler(sessionId, node) ?: {}
         )
     }

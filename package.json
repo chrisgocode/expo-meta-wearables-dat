@@ -29,6 +29,7 @@
     "app.plugin.js",
     "expo-module.config.json",
     "README.md",
+    "docs/dat-1.0-upgrade.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/npm/l/@chrisgocode/expo-meta-wearables-dat)](./LICENSE)
 ![platform: iOS | Android](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
 
-Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart glasses) into React Native apps. Provides device registration, permissions, session-based camera streaming, photo capture, and a React hook — bridged from the official Meta Wearables DAT SDK 0.9 on both iOS and Android.
+Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart glasses) into React Native apps. Provides device registration, permissions, session-based camera streaming, photo capture, and a React hook — bridged from the official Meta Wearables DAT SDK 1.0 on both iOS and Android.
 
 > **Official SDK docs:** [Meta Wearables DAT — Developer Documentation](https://wearables.developer.meta.com/docs/develop)
 >
@@ -21,12 +21,13 @@ Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart gl
 ## Features
 
 - Device registration / unregistration via Meta AI app
-- Permission management (camera)
+- Permission management (camera and microphone)
 - Device discovery and link state monitoring
 - Session-based camera streaming with native view
 - Display rendering on Meta Ray-Ban Display (declarative view tree with tap handlers)
 - Compressed HEVC video streaming (Android)
-- Photo capture (JPEG / HEIC)
+- Photo capture (JPEG / HEIC), standalone high-quality photos and transfer progress
+- Experimental inputs, motion sensors, speech transcription, voice invocation and stream audio
 - `useMetaWearables` React hook with full state management
 - Mock device simulation for testing (debug builds) with permission mocking and phone camera feed
 - Expo config plugin (auto-configures Info.plist, AndroidManifest, URL schemes, deployment target)
@@ -40,8 +41,8 @@ Expo native module for integrating **Meta Wearables DAT** (Ray-Ban Meta smart gl
 | iOS              | 17.2+    |
 | Android          | API 31+  |
 | Xcode            | 16+      |
-| Swift            | 5.9+     |
-| DAT SDK          | 0.9      |
+| Swift compiler   | 6.0+     |
+| DAT SDK          | 1.0      |
 | New Architecture | Untested |
 
 ## Supported Devices
@@ -99,7 +100,7 @@ Add the plugin to your `app.json` / `app.config.js`:
 | `metaAppId`                 | No       | Meta App ID from [Wearables Developer Center](https://wearables.developer.meta.com/). Omit for Developer Mode                                                                 |
 | `clientToken`               | No       | Client Token from Wearables Developer Center                                                                                                                                  |
 | `bluetoothUsageDescription` | No       | Custom Bluetooth usage description (iOS only)                                                                                                                                 |
-| `githubToken`               | No       | GitHub token for Maven packages (Android). Falls back to `GITHUB_TOKEN` env var                                                                                               |
+| `githubToken`               | No       | Deprecated and ignored: DAT 1.0 uses Maven Central; no token needed                                                                                                           |
 | `crashReportingOptOut`      | No       | Opt out of DAT SDK crash reporting (SDK 0.9+). Writes `MWDAT > CrashReporting > OptOut` on iOS and the `com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT` meta-data on Android |
 
 ### iOS
@@ -113,7 +114,8 @@ The plugin automatically configures:
 - `NSBluetoothAlwaysUsageDescription`
 - `MWDAT` configuration dictionary (including `TeamID` auto-resolved from Xcode's `DEVELOPMENT_TEAM` signing setting)
 - iOS deployment target to 17.2
-- Embeds MWDATCamera, MWDATCore & MWDATMockDevice dynamic frameworks
+- Embeds MWDATCore, MWDATCamera, MWDATDisplay, MWDATMockDevice, MWDATInputs, MWDATMotion and MWDATSpeech
+- Enables deterministic CocoaPods UUIDs to prevent collisions when React Native adds the SPM products
 
 > **Note:** DAT SDK 0.9 raised the iOS minimum deployment target from 15.2 to 17.2; apps targeting older iOS versions can no longer link the SDK. The podspec and config plugin both target 17.2.
 
@@ -125,10 +127,7 @@ The plugin automatically configures:
 - Deep link `<intent-filter>` on MainActivity with the configured URL scheme
 - Bluetooth permissions (`BLUETOOTH`, `BLUETOOTH_CONNECT`)
 
-The Android SDK dependencies are resolved via Maven from [GitHub Packages](https://github.com/facebook/meta-wearables-dat-android). The config plugin injects the Maven repository automatically. You need either:
-
-- `GITHUB_ACTOR` and `GITHUB_TOKEN` environment variables set, **or**
-- The `githubToken` plugin prop configured
+The seven DAT 1.0 Android dependencies are resolved from **Maven Central**, already included by Expo. No GitHub token is needed. The native module aligns Fresco dependencies to avoid a React Native launch crash with mixed 3.6/3.7 components. Incremental prebuild removes the old credentialed GitHub Packages repository injected by this plugin.
 
 ### Prebuild
 
@@ -147,7 +146,7 @@ npx expo prebuild --clean
 ### Prerequisites
 
 - The user must have the **Meta AI** app installed and paired with their glasses
-- A physical device is required (no simulator/emulator support)
+- Real glasses require a physical phone. MockDeviceKit works in debug simulator/emulator builds.
 - **iOS**: Xcode 16+ with a valid signing team
 - **Android**: Android Studio with SDK installed, minSdk 31 (Android 12+)
 
@@ -237,20 +236,20 @@ React hook that manages the full lifecycle of Meta Wearables integration.
 
 **Returned state:**
 
-| Field                 | Type                                  | Description                    |
-| --------------------- | ------------------------------------- | ------------------------------ |
-| `isConfigured`        | `boolean`                             | SDK configured                 |
-| `isConfiguring`       | `boolean`                             | `true` while configuring       |
-| `configError`         | `Error \| null`                       | Error from last `configure`    |
-| `registrationState`   | `RegistrationState`                   | Registration lifecycle state   |
-| `permissionStatus`    | `PermissionStatus`                    | `"granted"` \| `"denied"`      |
-| `devices`             | `Device[]`                            | Connected devices              |
-| `deviceStates`        | `Record<string, DeviceState>`         | Per-device thermal state       |
-| `deviceSessionStates` | `Record<string, DeviceSessionState>`  | Per-session states             |
-| `deviceSessionErrors` | `Record<string, { error, message? }>` | Per-session errors             |
-| `capabilityStates`    | `Record<string, CapabilityState>`     | Per-session capability state   |
-| `streamState`         | `StreamState`                         | Latest stream state            |
-| `cameraState`         | `CameraState`                         | Latest camera capability state |
+| Field                 | Type                                  | Description                                                |
+| --------------------- | ------------------------------------- | ---------------------------------------------------------- |
+| `isConfigured`        | `boolean`                             | SDK configured                                             |
+| `isConfiguring`       | `boolean`                             | `true` while configuring                                   |
+| `configError`         | `Error \| null`                       | Error from last `configure`                                |
+| `registrationState`   | `RegistrationState`                   | Registration lifecycle state                               |
+| `permissionStatus`    | `PermissionStatus`                    | `"granted"` \| `"denied"`                                  |
+| `devices`             | `Device[]`                            | Connected devices                                          |
+| `deviceStates`        | `Record<string, DeviceState>`         | Per-device battery, charging, don, hinge and thermal state |
+| `deviceSessionStates` | `Record<string, DeviceSessionState>`  | Per-session states                                         |
+| `deviceSessionErrors` | `Record<string, { error, message? }>` | Per-session errors                                         |
+| `capabilityStates`    | `Record<string, CapabilityState>`     | Per-session capability state                               |
+| `streamState`         | `StreamState`                         | Latest stream state                                        |
+| `cameraState`         | `CameraState`                         | Latest camera capability state                             |
 
 **Returned actions:**
 
@@ -347,7 +346,7 @@ Subscribe via `addListener` or hook callbacks:
 | `onLinkStateChange`          | `{ deviceId: string, linkState: LinkState }`                             |
 | `onStreamStateChange`        | `{ sessionId: string; state: StreamState }`                              |
 | `onCameraStateChange`        | `{ sessionId: string; state: CameraState }`                              |
-| `onDeviceStateChange`        | `{ deviceId: DeviceIdentifier; thermalLevel: ThermalLevel }`             |
+| `onDeviceStateChange`        | `{ deviceId: DeviceIdentifier } & DeviceState`                           |
 | `onVideoFrame`               | `{ timestamp, width, height, isCompressed? }`                            |
 | `onPhotoCaptured`            | `{ filePath, format, timestamp, width?, height?, base64? }`              |
 | `onStreamError`              | `StreamError` (discriminated union)                                      |
@@ -533,6 +532,59 @@ The `example/` directory contains a full demo app:
 
 > Requires a physical device with a paired Meta Wearables device.
 
+## Upgrading to SDK 1.0
+
+Re-run `npx expo prebuild`, then rebuild the development client. iOS stays at 17.2 and Android at API 31. Android artifacts now use Maven Central. The plugin updates an existing iOS embedding phase with all seven frameworks and removes the old Android repository. See the [upgrade research and platform differences](docs/dat-1.0-upgrade.md) for primary sources and lifecycle details.
+
+**Voice invocation is available on both platforms, experimentally.** Configure approval and the spoken app name in Wearables Developer Center for “Hey Meta, start {app name}”. Experimental features currently support development/testing; Meta does not permit publishing apps that use them. Camera and microphone permissions are separate; voice listening itself requires neither.
+
+All new features use direct imports and `addListener`; the hook continues to manage registration, sessions, camera, and Display.
+
+| Feature                            | Functions                                                                                                                                      | Events                                                                                                             |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Inputs                             | `addInputsToSession`, `removeInputsFromSession`                                                                                                | `onInputEvent`                                                                                                     |
+| Motion                             | `addMotionToSession`, `startMotion`, `stopMotion`, `removeMotionFromSession`                                                                   | `onMotionSample`                                                                                                   |
+| Speech                             | `addSpeechToSession`, `startSpeech`, `stopSpeech`, `removeSpeechFromSession`                                                                   | `onTranscription`, `onSpeechLocaleChange`                                                                          |
+| Voice invocation                   | `startVoiceInvocations`, `stopVoiceInvocations`, `getPendingVoiceInvocations`, `respondToVoiceInvocation`, `isVoiceInvocationLaunch` (Android) | `onVoiceInvocation`, `onVoiceInvocationError`, `onVoiceInvocationStateChange`, `onVoiceInvocationLaunch` (Android) |
+| Standalone Photo                   | `startPhotoCapture`, `captureHighQualityPhoto`, `stopPhotoCapture`                                                                             | `onHighQualityPhotoCaptured`, `onPhotoTransferProgress`                                                            |
+| Stream Audio                       | `addCameraToSession` with `audioCodec`                                                                                                         | `onAudioFrame`                                                                                                     |
+| Registration requests from Meta AI | `getPendingRegistrationRequests`, `respondToRegistrationRequest`                                                                               | `onRegistrationRequest`                                                                                            |
+
+Inputs starts on attachment; Motion and Speech attach and start together. Observe `onExperimentalCapabilityStateChange` / `onExperimentalCapabilityError` for Inputs, Motion, Speech and Photo. Motion sampling supports 5/10/15/24/30/60 Hz; absent sensors are omitted and nanosecond timestamps are decimal strings.
+
+Subscribe before starting voice listening. Respond promptly, exactly once per invocation; the returned boolean reports response delivery:
+
+```ts
+import {
+  addListener,
+  startVoiceInvocations,
+  respondToVoiceInvocation,
+  getPendingVoiceInvocations,
+} from "@chrisgocode/expo-meta-wearables-dat";
+
+const respond = async (invocation: { invocationId: string }) => {
+  // Open your app's launch experience here, then acknowledge Meta AI.
+  const delivered = await respondToVoiceInvocation(invocation.invocationId, true, "App opened");
+  console.log("Voice response delivered:", delivered);
+};
+const subscription = addListener("onVoiceInvocation", (invocation) => {
+  void respond(invocation).catch(console.error);
+});
+await startVoiceInvocations(deviceId);
+// On startup, recover requests delivered before subscribing. Deduplicate against
+// the listener if you process both concurrently; each ID permits one response.
+```
+
+For speech, request DAT `microphone` permission before `addSpeechToSession(sessionId)`. For video audio, request both DAT permissions and pass `audioCodec: { sampleRate: 48000, numberOfChannels: 1 }` in the stream configuration. `onAudioFrame` carries base64 PCM, encoding, interleaving, channel count and presentation time; preserve those fields when decoding (iOS and Android layouts differ).
+
+For standalone photos, attach Camera with `{ startStream: false }`, call `startPhotoCapture`, wait for Photo state `started`, then call `captureHighQualityPhoto(sessionId, { resolution: "full", quality: "high" })`. The saved local file arrives through `onHighQualityPhotoCaptured`. Photo and video compete for the camera: stop one before starting the other. **On Android, stopped Photo and Stream children are terminal**: remove/re-add Camera before using that child again. `startCameraStream` / `stopCameraStream` expose video lifecycle independently.
+
+Device snapshots and `onDeviceStateChange` now include battery, charging, don, hinge and thermal state. `getSessionDevice(sessionId)` exposes the session's live device. Handle new `insufficientSDKVersion` and nonblocking `dwaOutOfStuRange` session errors. Display buttons support `actionRole: "primary"` for initial focus.
+
+Debug builds additionally support `pairMockDevice("metaRayBanDisplay")` and `<EMWDATStreamView mockDisplayDeviceId={id} />`. `mockDeviceSimulate(id, event)` injects input, motion CSV feeds, transcription/locale/errors, voice actions, standalone photo outcomes and health changes. `startMockDeviceTestServer` / `stopMockDeviceTestServer` expose the SDK server; `mockSimulateRegistrationOutcome` is Android-only. Injected speech needs no phone microphone setup; live mock ASR needs host microphone permissions (and iOS speech recognition usage descriptions).
+
+In the example app, enable MockDeviceKit and use **Run DAT 1.0 smoke check** to exercise Inputs, Speech, device-state delivery and voice acknowledgment through the real SDK bridge. This does not validate production voice approval or real glasses audio.
+
 ## Upgrading to SDK 0.9
 
 This release moves from DAT SDK 0.6 to 0.9 (spanning the 0.7, 0.8 and 0.9 SDK releases).
@@ -648,7 +700,7 @@ See [SECURITY.md](./SECURITY.md) for the vulnerability reporting process.
 
 ## Roadmap
 
-- Speaker playback / microphone capability
+- Speaker playback (pending SDK support)
 - Background streaming (pending SDK support)
 - New Architecture validation
 

@@ -1,5 +1,7 @@
 # Meta Wearables DAT SDK
 
+This repo uses DAT **1.0.0**. Before changing native integration, read [the 1.0 upgrade note](docs/dat-1.0-upgrade.md) for exact platform APIs, experimental approval requirements, and lifecycle differences. The setup snippets below describe earlier SDK releases; DAT 1.0 Android artifacts use Maven Central without credentials. Use this Expo module’s TypeScript API and config plugin when configuring the example app.
+
 > Full API reference: https://wearables.developer.meta.com/llms.txt?full=true
 > DAT docs MCP: https://mcp.developer.meta.com/wearables
 > Developer docs: https://wearables.developer.meta.com/docs/develop/
@@ -17,12 +19,15 @@
 
 ## Architecture
 
-The SDK is organized into four public modules:
+The SDK is organized into seven public modules:
 
 - **mwdat-core**: Registration, permissions, devices, and session creation
 - **mwdat-camera**: Stream capability, video frames, and photo capture
 - **mwdat-display**: Display capability, display UI components, icons, images, buttons, and video
 - **mwdat-mockdevice**: MockDeviceKit for testing without hardware
+- **mwdat-inputs**: Captouch, buttons, neural band and drag input
+- **mwdat-motion**: Sensor samples
+- **mwdat-speech**: Speech transcription
 
 ### Initialization and session setup
 

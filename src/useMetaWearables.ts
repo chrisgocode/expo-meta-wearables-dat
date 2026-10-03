@@ -175,7 +175,7 @@ export function useMetaWearables(options: UseMetaWearablesOptions = {}): UseMeta
       }),
 
       addListener("onDeviceStateChange", (e) => {
-        setDeviceStates((prev) => ({ ...prev, [e.deviceId]: { thermalLevel: e.thermalLevel } }));
+        setDeviceStates((prev) => ({ ...prev, [e.deviceId]: e }));
         callbacksRef.current.onDeviceStateChange?.(e.deviceId, e.thermalLevel);
       }),
 

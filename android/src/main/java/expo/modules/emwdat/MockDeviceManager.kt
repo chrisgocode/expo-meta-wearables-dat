@@ -1,6 +1,11 @@
 package expo.modules.emwdat
 
 import android.content.Context
+import android.view.View
+import com.meta.wearable.dat.core.types.ChargingState
+import com.meta.wearable.dat.core.types.ThermalLevel
+import com.meta.wearable.dat.inputs.types.*
+import com.meta.wearable.dat.mockdevice.api.speech.MockSpeechSource
 import android.net.Uri
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
@@ -164,12 +169,85 @@ object MockDeviceManager {
         ))
     }
 
+    fun createDisplayPreview(id: String, context: Context): View = getDevice(id).services.display.createPreviewView(context)
+    fun startTestServer(context: Context, port: Int): Int = getKit(context).startTestServer(port).bridgeValue()
+    fun stopTestServer(context: Context) { getKit(context).stopTestServer() }
+    fun simulateRegistrationOutcome(context: Context, success: Boolean) { getKit(context).simulateRegistrationOutcome(success) }
+
+    fun simulate(id: String, event: Map<String, Any>): Any? {
+        val device = getDevice(id)
+        fun text(key: String) = event[key] as? String ?: throw IllegalArgumentException("Missing $key")
+        when (text("type")) {
+            "battery" -> {
+                val level = (event["level"] as? Number)?.toInt() ?: -1
+                require(level in -1..100) { "Battery must be 0–100 or null" }
+                device.setBatteryLevel(level)
+            }
+            "charging" -> device.setChargingState(ChargingState.entries.firstOrNull { sdkEnumName(it) == text("state") }
+                ?: throw IllegalArgumentException("Invalid charging state"))
+            "thermal" -> device.setThermalLevel(ThermalLevel.entries.firstOrNull { sdkEnumName(it) == text("level") }
+                ?: throw IllegalArgumentException("Invalid thermal level"))
+            "input" -> {
+                val input = event["event"] as? Map<*, *> ?: throw IllegalArgumentException("Missing input event")
+                val source = InputSource.entries.firstOrNull { sdkEnumName(it) == (input["source"] ?: "captouch") }
+                    ?: throw IllegalArgumentException("Invalid input source")
+                val kit = device.services.input
+                when (input["type"]) {
+                    "nav" -> when (input["direction"]) {
+                        "up" -> kit.navUp(source); "down" -> kit.navDown(source)
+                        "left" -> kit.navLeft(source); "right" -> kit.navRight(source)
+                        else -> throw IllegalArgumentException("Invalid navigation direction")
+                    }
+                    "select" -> kit.select(source)
+                    "back" -> kit.back(source)
+                    "button" -> kit.button(ButtonType.ACTION)
+                    "capture" -> kit.capture(CapturePressType.entries.firstOrNull { sdkEnumName(it) == input["pressType"] }
+                        ?: throw IllegalArgumentException("Invalid capture press type"))
+                    "drag" -> {
+                        val action = DragAction.entries.firstOrNull { sdkEnumName(it) == input["action"] }
+                            ?: throw IllegalArgumentException("Invalid drag action")
+                        val coords = listOf("x", "y", "dx", "dy").map { key ->
+                            (input[key] as? Number)?.toFloat()?.takeIf { it.isFinite() }
+                                ?: throw IllegalArgumentException("Invalid drag coordinate")
+                        }
+                        kit.drag(action, coords[0], coords[1], coords[2], coords[3])
+                    }
+                    else -> throw IllegalArgumentException("Invalid input type")
+                }
+            }
+            "motionFeed" -> device.services.motion.setMotionFeed(parseUri(text("fileUrl")))
+            "transcription" -> {
+                val confidence = (event["confidence"] as? Number)?.toFloat() ?: -1f
+                require(confidence == -1f || confidence in 0f..1f) { "Invalid confidence" }
+                device.services.speech.simulateTranscription(text("text"), event["isFinal"] as? Boolean ?: true, confidence)
+            }
+            "speechLocale" -> device.services.speech.setLocale(text("locale"))
+            "speechError" -> device.services.speech.simulateError((event["code"] as Number).toInt(), text("message"))
+            "speechCompletion" -> device.services.speech.simulateCompletion()
+            "speechSource" -> device.services.speech.setTranscriptionSource(if (event["live"] == true) MockSpeechSource.LIVE_DEVICE_ASR else MockSpeechSource.INJECTED)
+            "launchApp" -> {
+                check(device.services.voiceInvocation.hasConnectedApps()) { "Start voice invocation listening first" }
+                return device.services.voiceInvocation.simulateLaunchAppAction()
+            }
+            "incompleteVoiceInvocation" -> {
+                check(device.services.voiceInvocation.hasConnectedApps()) { "Start voice invocation listening first" }
+                return device.services.voiceInvocation.simulateIncompleteAction()
+            }
+            "capturedPhoto" -> device.services.cameraCapture.setCapturedPhoto(parseUri(text("fileUrl")))
+            "photoFailure" -> device.services.cameraCapture.simulateCaptureFailure()
+            "displayClick" -> return device.services.display.sendClick(text("identifier"))
+            else -> throw IllegalArgumentException("Unknown mock event type")
+        }
+        return null
+    }
+
     // MARK: - Helpers
 
     private fun mapGlassesModel(model: String): GlassesModel = when (model) {
         "oakleyMetaHSTN" -> GlassesModel.OAKLEY_META_HSTN
         "oakleyMetaVanguard" -> GlassesModel.OAKLEY_META_VANGUARD
         "rayBanMetaOptics" -> GlassesModel.RAYBAN_META_OPTICS
+        "metaRayBanDisplay" -> GlassesModel.META_RAYBAN_DISPLAY
         "metaGlasses" -> GlassesModel.META_GLASSES
         else -> GlassesModel.RAYBAN_META
     }
@@ -187,6 +265,7 @@ object MockDeviceManager {
     }
 
     private fun mapPermission(permission: String): Permission? = when (permission) {
+        "microphone" -> Permission.MICROPHONE
         "camera" -> Permission.CAMERA
         else -> null
     }

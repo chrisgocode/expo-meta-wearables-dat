@@ -5,6 +5,8 @@ import UIKit
 public class EMWDATStreamView: ExpoView {
     private let logger = EMWDATLogger.shared
     private let imageView = UIImageView()
+    private var mockPreview: UIView?
+    private var mockDeviceId: String?
     private var isActive: Bool = false
     private let viewId = UUID()
 
@@ -39,7 +41,7 @@ public class EMWDATStreamView: ExpoView {
     func setActive(_ active: Bool) {
         isActive = active
         Task { @MainActor in
-            if active {
+            if active && self.mockPreview == nil {
                 self.logger.info("StreamView", "Subscribing to frames", context: ["viewId": self.viewId.uuidString.prefix(8)])
                 CameraSessionManager.shared.setFrameCallback({ [weak self] image in
                     self?.imageView.image = image
@@ -50,6 +52,30 @@ public class EMWDATStreamView: ExpoView {
                 self.imageView.image = nil
             }
         }
+    }
+
+    @MainActor func setMockDisplayDevice(_ id: String?) throws {
+        guard mockDeviceId != id else { return }
+        mockPreview?.removeFromSuperview()
+        mockPreview = nil
+        mockDeviceId = nil
+#if DEBUG
+        if let id {
+            CameraSessionManager.shared.removeFrameCallback(owner: viewId)
+            let preview = try MockDeviceManager.shared.createDisplayPreview(id: id)
+            preview.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(preview)
+            NSLayoutConstraint.activate([
+                preview.topAnchor.constraint(equalTo: topAnchor), preview.bottomAnchor.constraint(equalTo: bottomAnchor),
+                preview.leadingAnchor.constraint(equalTo: leadingAnchor), preview.trailingAnchor.constraint(equalTo: trailingAnchor)
+            ])
+            mockPreview = preview
+        }
+#else
+        if id != nil { throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mock display preview is only available in debug builds"]) }
+#endif
+        mockDeviceId = id
+        setActive(isActive)
     }
 
     /// Called by EMWDATModule Prop("resizeMode")

@@ -2,6 +2,9 @@ import ExpoModulesCore
 import MWDATCore
 import MWDATCamera
 import MWDATDisplay
+#if DEBUG
+import MWDATMockDevice
+#endif
 
 public class EMWDATModule: Module {
     private let logger = EMWDATLogger.shared
@@ -27,26 +30,31 @@ public class EMWDATModule: Module {
             "onDisplayStateChange",
             "onDisplayTap",
             "onDisplayError",
-            "onDisplayVideoEvent"
+            "onDisplayVideoEvent", "onInputEvent", "onMotionSample", "onTranscription", "onSpeechLocaleChange",
+            "onExperimentalCapabilityStateChange", "onExperimentalCapabilityError", "onVoiceInvocation", "onVoiceInvocationLaunch",
+            "onVoiceInvocationStateChange", "onVoiceInvocationError", "onRegistrationRequest", "onHighQualityPhotoCaptured",
+            "onPhotoTransferProgress", "onAudioFrame"
         )
 
         // MARK: - Lifecycle
 
         OnCreate {
             self.logger.info("Module", "Module created")
-            Task { @MainActor in
+            Task<Void, Never> { @MainActor in
                 let emitter: EventEmitter = { [weak self] name, body in
                     self?.sendEvent(name, body)
                 }
                 WearablesManager.shared.setEventEmitter(emitter)
                 CameraSessionManager.shared.setEventEmitter(emitter)
                 DisplayManager.shared.setEventEmitter(emitter)
+                ExperimentalCapabilitiesManager.shared.setEventEmitter(emitter)
             }
         }
 
         OnDestroy {
             self.logger.info("Module", "Module destroyed")
             Task { @MainActor in
+                await ExperimentalCapabilitiesManager.shared.destroy()
                 CameraSessionManager.shared.destroy()
                 DisplayManager.shared.destroy()
                 WearablesManager.shared.cleanup()
@@ -133,7 +141,7 @@ public class EMWDATModule: Module {
             }
             Task { @MainActor in
                 do {
-                    let handled = try await Wearables.shared.handleUrl(parsedUrl)
+                    let handled = await WearablesManager.shared.handleUrl(parsedUrl)
                     promise.resolve(handled)
                 } catch let error as WearablesHandleURLError {
                     switch error {
@@ -154,13 +162,13 @@ public class EMWDATModule: Module {
         // MARK: - Permissions
 
         AsyncFunction("checkPermissionStatus") { (permission: String, promise: Promise) in
-            guard permission == "camera" else {
+            guard permission == "camera" || permission == "microphone" else {
                 promise.resolve("denied")
                 return
             }
             Task { @MainActor in
                 do {
-                    let status = try await WearablesManager.shared.checkPermissionStatus(.camera)
+                    let status = try await WearablesManager.shared.checkPermissionStatus(permission == "camera" ? .camera : .microphone)
                     promise.resolve(self.mapPermissionStatus(status))
                 } catch {
                     self.logger.error("Module", "checkPermissionStatus failed", error: error)
@@ -170,13 +178,13 @@ public class EMWDATModule: Module {
         }
 
         AsyncFunction("requestPermission") { (permission: String, promise: Promise) in
-            guard permission == "camera" else {
+            guard permission == "camera" || permission == "microphone" else {
                 promise.reject("INVALID_PERMISSION", "Unknown permission: \(permission)")
                 return
             }
             Task { @MainActor in
                 do {
-                    let status = try await WearablesManager.shared.requestPermission(.camera)
+                    let status = try await WearablesManager.shared.requestPermission(permission == "camera" ? .camera : .microphone)
                     promise.resolve(self.mapPermissionStatus(status))
                 } catch {
                     promise.reject("PERMISSION_FAILED", error.localizedDescription)
@@ -262,8 +270,8 @@ public class EMWDATModule: Module {
         AsyncFunction("addCameraToSession") { (sessionId: String, config: [String: Any], promise: Promise) in
             Task { @MainActor in
                 do {
-                    let streamConfig = CameraSessionManager.parseConfig(from: config)
-                    try CameraSessionManager.shared.addCameraToSession(sessionId: sessionId, config: streamConfig)
+                    let streamConfig = try CameraSessionManager.parseConfig(from: config)
+                    try CameraSessionManager.shared.addCameraToSession(sessionId: sessionId, config: streamConfig, startStream: config["startStream"] as? Bool ?? true)
                     promise.resolve(nil)
                 } catch let error as DeviceSessionError {
                     promise.reject("CAMERA_ADD_FAILED", error.description)
@@ -357,17 +365,21 @@ public class EMWDATModule: Module {
             Task { @MainActor in
                 let initiallyRegistered = config["initiallyRegistered"] as? Bool ?? true
                 let initialPermissionsGranted = config["initialPermissionsGranted"] as? Bool ?? true
-                MockDeviceManager.shared.enableMockDeviceKit(
-                    initiallyRegistered: initiallyRegistered,
-                    initialPermissionsGranted: initialPermissionsGranted
-                )
-                promise.resolve(nil)
+                do {
+                    try MockDeviceManager.shared.enableMockDeviceKit(
+                        initiallyRegistered: initiallyRegistered,
+                        initialPermissionsGranted: initialPermissionsGranted
+                    )
+                    promise.resolve(nil)
+                } catch {
+                    promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
+                }
             }
         }
 
         AsyncFunction("disableMockDeviceKit") { (promise: Promise) in
             Task { @MainActor in
-                MockDeviceManager.shared.disableMockDeviceKit()
+                await MockDeviceManager.shared.disableMockDeviceKit()
                 promise.resolve(nil)
             }
         }
@@ -392,7 +404,7 @@ public class EMWDATModule: Module {
         AsyncFunction("unpairMockDevice") { (deviceId: String, promise: Promise) in
             Task { @MainActor in
                 do {
-                    try MockDeviceManager.shared.unpairMockDevice(id: deviceId)
+                    try await MockDeviceManager.shared.unpairMockDevice(id: deviceId)
                     promise.resolve(nil)
                 } catch {
                     promise.reject("MOCK_DEVICE_ERROR", error.localizedDescription)
@@ -562,9 +574,110 @@ public class EMWDATModule: Module {
         }
         #endif
 
+
+        // DAT 1.0 capabilities
+        AsyncFunction("addInputsToSession") { (id: String, config: [String: Any]) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.addInputs(id, config: config) }
+        }
+        AsyncFunction("removeInputsFromSession") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.removeInputs(id) }
+        }
+        AsyncFunction("addMotionToSession") { (id: String, config: [String: Any]) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.addMotion(id, config: config) }
+        }
+        AsyncFunction("startMotion") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.startMotion(id) }
+        }
+        AsyncFunction("stopMotion") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.stopMotion(id) }
+        }
+        AsyncFunction("removeMotionFromSession") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.removeMotion(id) }
+        }
+        AsyncFunction("addSpeechToSession") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.addSpeech(id) }
+        }
+        AsyncFunction("startSpeech") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.startSpeech(id) }
+        }
+        AsyncFunction("stopSpeech") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.stopSpeech(id) }
+        }
+        AsyncFunction("removeSpeechFromSession") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.removeSpeech(id) }
+        }
+        AsyncFunction("startVoiceInvocations") { (id: String) in
+            try await MainActor.run { try ExperimentalCapabilitiesManager.shared.startVoice(id) }
+        }
+        AsyncFunction("startPhotoCapture") { (id: String) in
+            try await MainActor.run { try CameraSessionManager.shared.startPhotoCapture(id) }
+        }
+        AsyncFunction("stopPhotoCapture") { (id: String) in
+            try await MainActor.run { try CameraSessionManager.shared.stopPhotoCapture(id) }
+        }
+        AsyncFunction("captureHighQualityPhoto") { (id: String, config: [String: Any]) in
+            try await MainActor.run { try CameraSessionManager.shared.captureHighQualityPhoto(id, config: config) }
+        }
+        AsyncFunction("startCameraStream") { (id: String) in
+            try await MainActor.run { try CameraSessionManager.shared.startCameraStream(id) }
+        }
+        AsyncFunction("stopCameraStream") { (id: String) in
+            try await MainActor.run { try CameraSessionManager.shared.stopCameraStream(id) }
+        }
+        AsyncFunction("stopVoiceInvocations") { await ExperimentalCapabilitiesManager.shared.stopVoice() }
+        AsyncFunction("respondToVoiceInvocation") { (id: String, success: Bool, output: String?) in
+            try await ExperimentalCapabilitiesManager.shared.respondToVoice(id, success: success, output: output)
+        }
+        AsyncFunction("getPendingVoiceInvocations") {
+            await MainActor.run { ExperimentalCapabilitiesManager.shared.getPendingVoiceInvocations() }
+        }
+        AsyncFunction("isVoiceInvocationLaunch") { false }
+        AsyncFunction("getPendingRegistrationRequests") {
+            await MainActor.run { ExperimentalCapabilitiesManager.shared.getPendingRegistrationRequests() }
+        }
+        AsyncFunction("respondToRegistrationRequest") { (id: String, accept: Bool) in
+            try await ExperimentalCapabilitiesManager.shared.respondToRegistrationRequest(id, accept: accept)
+        }
+        AsyncFunction("getSessionDevice") { (id: String) in
+            await MainActor.run { () -> [String: Any]? in
+                guard let device = WearablesManager.shared.getSession(sessionId: id)?.device else { return nil }
+                return WearablesManager.shared.getDevice(identifier: device.identifier)
+            }
+        }
+        AsyncFunction("mockDeviceSimulate") { (id: String, event: [String: Any]) in
+#if DEBUG
+            return try await MainActor.run { try MockDeviceManager.shared.simulate(id: id, event: event) }
+#else
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mock devices are only available in debug builds"])
+#endif
+        }
+        AsyncFunction("startMockDeviceTestServer") { (port: Int) in
+#if DEBUG
+            guard (0...65535).contains(port) else { throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid port"]) }
+            return Int(try await MWDATMockDevice.MockDeviceKit.shared.startTestServer(port: UInt16(port)))
+#else
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mock devices are only available in debug builds"])
+#endif
+        }
+        AsyncFunction("stopMockDeviceTestServer") {
+#if DEBUG
+            await MWDATMockDevice.MockDeviceKit.shared.stopTestServer()
+#else
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mock devices are only available in debug builds"])
+#endif
+        }
+        AsyncFunction("mockSimulateRegistrationOutcome") { (_: Bool) in
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Registration outcome injection is Android-only"])
+        }
         // MARK: - View
 
         View(EMWDATStreamView.self) {
+            Prop("mockDisplayDeviceId") { (view: EMWDATStreamView, id: String?) in
+                Task { @MainActor in
+                    do { try view.setMockDisplayDevice(id) }
+                    catch { self.logger.error("StreamView", "Mock display preview failed", error: error) }
+                }
+            }
             Prop("isActive") { (view: EMWDATStreamView, isActive: Bool) in
                 view.setActive(isActive)
             }
@@ -605,8 +718,8 @@ public class EMWDATModule: Module {
             return "Wearables SDK is already configured."
         case .configurationError:
             return "SDK configuration error. Check Info.plist MWDAT dictionary (MetaAppID, ClientToken, AppLinkURLScheme)."
-        @unknown default:
-            return "Unexpected SDK error."
+        default:
+            return error.description
         }
     }
 
@@ -620,8 +733,6 @@ public class EMWDATModule: Module {
             return "Meta AI app is not installed on this device."
         case .networkUnavailable:
             return "Network is unavailable."
-        case .timeout:
-            return "Registration timed out."
         case .unknown:
             return "Unknown registration error."
         @unknown default:
@@ -637,8 +748,6 @@ public class EMWDATModule: Module {
             return "MWDAT configuration is invalid. Check Info.plist MWDAT dictionary."
         case .metaAINotInstalled:
             return "Meta AI app is not installed on this device."
-        case .timeout:
-            return "Unregistration timed out."
         case .unknown:
             return "Unknown unregistration error."
         @unknown default:

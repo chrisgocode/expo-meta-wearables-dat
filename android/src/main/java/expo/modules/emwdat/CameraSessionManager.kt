@@ -1,6 +1,13 @@
 package expo.modules.emwdat
 
 import android.content.Context
+import android.util.Base64
+import com.meta.wearable.dat.camera.types.AudioCodec
+import com.meta.wearable.dat.camera.types.AudioSampleRate
+import com.meta.wearable.dat.camera.photo.types.PhotoResolution
+import com.meta.wearable.dat.camera.photo.types.PhotoQuality
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
@@ -44,6 +51,9 @@ object CameraSessionManager {
     private val videoJobs: MutableMap<String, Job> = mutableMapOf()
     private val stateJobs: MutableMap<String, Job> = mutableMapOf()
     private val cameraStateJobs: MutableMap<String, Job> = mutableMapOf()
+    private val audioJobs: MutableMap<String, Job> = mutableMapOf()
+    private val stoppedPhotos = mutableSetOf<String>()
+    private val captureJobs: MutableMap<String, List<Job>> = mutableMapOf()
     private val errorJobs: MutableMap<String, Job> = mutableMapOf()
 
     private var scope: CoroutineScope? = null
@@ -91,7 +101,16 @@ object CameraSessionManager {
         val compressVideo = config["compressVideo"] as? Boolean
             ?: ((config["videoCodec"] as? String) == "hvc1")
 
-        val streamConfig = StreamConfiguration(videoQuality, frameRate, compressVideo)
+        require(frameRate in listOf(2, 7, 15, 24, 30)) { "Invalid frame rate" }
+        val audio = config["audioCodec"] as? Map<*, *>
+        val audioCodec = audio?.let {
+            val rate = AudioSampleRate.entries.firstOrNull { it.name == "RATE_${(audio["sampleRate"] as? Number)?.toInt()}" }
+                ?: throw IllegalArgumentException("Invalid audio sample rate")
+            val channels = (audio["numberOfChannels"] as? Number)?.toInt() ?: 0
+            require(channels in 1..2) { "Invalid audio channel count" }
+            AudioCodec.PCM(rate, channels)
+        }
+        val streamConfig = StreamConfiguration(audioCodec = audioCodec, videoQuality = videoQuality, frameRate = frameRate, compressVideo = compressVideo)
 
         logger.info("Camera", "Adding camera to session", mapOf(
             "sessionId" to sessionId,
@@ -145,8 +164,21 @@ object CameraSessionManager {
             }
         }
 
-        // Start the stream — explicit since SDK 0.7
-        stream.start().onFailure { error, _ ->
+        if (audioCodec != null) {
+            audioJobs[sessionId] = currentScope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                stream.audioStream.collect { frame ->
+                    val buffer = frame.buffer.duplicate()
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    emitEvent("onAudioFrame", mapOf("sessionId" to sessionId,
+                        "data" to Base64.encodeToString(bytes, Base64.NO_WRAP), "encoding" to "int16", "interleaved" to true,
+                        "sampleRate" to (audio?.get("sampleRate") as Number).toInt(), "numberOfChannels" to audioCodec.numberOfChannels,
+                        "presentationTimeUs" to frame.presentationTimeUs))
+                }
+            }
+        }
+        // Attach-only mode leaves video stopped so the standalone photo child can own the camera.
+        if (config["startStream"] != false) stream.start().onFailure { error, _ ->
             logger.error("Camera", "Failed to start stream", mapOf(
                 "sessionId" to sessionId,
                 "error" to error.description
@@ -177,6 +209,49 @@ object CameraSessionManager {
         ))
 
         logger.info("Camera", "Camera removed from session", mapOf("sessionId" to sessionId))
+    }
+
+    fun startCameraStream(id: String) { checkNotNull(streams[id]) { "Camera not attached" }.start().bridgeValue() }
+    fun stopCameraStream(id: String) { checkNotNull(streams[id]) { "Camera not attached" }.stop() }
+    fun startPhotoCapture(id: String, context: Context) {
+        check(!captureJobs.containsKey(id)) { "Photo capture already attached" }
+        check(id !in stoppedPhotos) { "Stopped photo capture is terminal; remove and reattach the camera" }
+        val photo = checkNotNull(cameras[id]) { "Camera not attached" }.photo
+        val scope = checkNotNull(scope)
+        captureJobs[id] = listOf(
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { photo.state.collect {
+                emitEvent("onExperimentalCapabilityStateChange", mapOf("sessionId" to id, "capability" to "photo", "state" to sdkEnumName(it)))
+            } },
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { photo.errors.collect {
+                emitEvent("onExperimentalCapabilityError", mapOf("sessionId" to id, "capability" to "photo", "error" to it.toString(), "message" to it.description))
+            } },
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { photo.transferProgressStream.collect {
+                emitEvent("onPhotoTransferProgress", mapOf("sessionId" to id, "bytesReceived" to it.bytesReceived, "totalBytes" to it.totalBytes, "fraction" to it.fraction))
+            } },
+            scope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { photo.photoStream.collect {
+                try {
+                    val file = File.createTempFile("emwdat_capture_", ".jpg", context.cacheDir)
+                    file.writeBytes(it.imageData)
+                    val body = mutableMapOf<String, Any>("sessionId" to id, "filePath" to file.absolutePath, "timestamp" to it.timestamp)
+                    it.metadata?.let { body["metadataBase64"] = Base64.encodeToString(it, Base64.NO_WRAP) }
+                    emitEvent("onHighQualityPhotoCaptured", body)
+                } catch (error: Exception) {
+                    emitEvent("onExperimentalCapabilityError", mapOf("sessionId" to id, "capability" to "photo", "error" to "saveFailed", "message" to (error.message ?: "Failed to save photo")))
+                }
+            } }
+        )
+    }
+    fun stopPhotoCapture(id: String) {
+        check(captureJobs.containsKey(id)) { "Call startPhotoCapture first" }
+        checkNotNull(cameras[id]) { "Camera not attached" }.photo.stop()
+        stoppedPhotos.add(id)
+        captureJobs.remove(id)?.forEach { it.cancel() }
+    }
+    fun captureHighQualityPhoto(id: String, config: Map<String, Any>) {
+        check(captureJobs.containsKey(id)) { "Call startPhotoCapture first" }
+        val resolution = PhotoResolution.valueOf((config["resolution"] as? String ?: "medium").uppercase())
+        val quality = PhotoQuality.valueOf((config["quality"] as? String ?: "medium").uppercase())
+        checkNotNull(cameras[id]).photo.capturePhoto(resolution, quality)
     }
 
     suspend fun capturePhoto(context: Context, format: String) {
@@ -414,6 +489,9 @@ object CameraSessionManager {
         stateJobs.remove(sessionId)?.cancel()
         cameraStateJobs.remove(sessionId)?.cancel()
         errorJobs.remove(sessionId)?.cancel()
+        audioJobs.remove(sessionId)?.cancel()
+        captureJobs.remove(sessionId)?.forEach { it.cancel() }
+        stoppedPhotos.remove(sessionId)
         streams.remove(sessionId)
         cameras.remove(sessionId)
         logger.debug("Camera", "Camera destroyed", mapOf("sessionId" to sessionId))

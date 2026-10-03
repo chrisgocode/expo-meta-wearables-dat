@@ -2,6 +2,12 @@ import { NativeModule, requireNativeModule } from "expo";
 import { Platform } from "react-native";
 
 import type {
+  InputsConfiguration,
+  MotionConfiguration,
+  VoiceInvocation,
+  RegistrationRequest,
+  PhotoConfiguration,
+  MockDeviceEvent,
   CameraFacing,
   Device,
   DisplayRoot,
@@ -52,6 +58,38 @@ declare class EMWDATNativeModule extends NativeModule<EMWDATModuleEvents> {
   addCameraToSession(sessionId: string, config: Partial<StreamConfiguration>): Promise<void>;
   removeCameraFromSession(sessionId: string): Promise<void>;
   capturePhoto(format: string): Promise<void>;
+
+  getSessionDevice(sessionId: string): Promise<Device | null>;
+  addInputsToSession(sessionId: string, config: InputsConfiguration): Promise<void>;
+  removeInputsFromSession(sessionId: string): Promise<void>;
+  addMotionToSession(sessionId: string, config: MotionConfiguration): Promise<void>;
+  startMotion(sessionId: string): Promise<void>;
+  stopMotion(sessionId: string): Promise<void>;
+  removeMotionFromSession(sessionId: string): Promise<void>;
+  addSpeechToSession(sessionId: string): Promise<void>;
+  startSpeech(sessionId: string): Promise<void>;
+  stopSpeech(sessionId: string): Promise<void>;
+  removeSpeechFromSession(sessionId: string): Promise<void>;
+  startVoiceInvocations(deviceId: string): Promise<void>;
+  stopVoiceInvocations(): Promise<void>;
+  respondToVoiceInvocation(
+    invocationId: string,
+    success: boolean,
+    actionOutput?: string
+  ): Promise<boolean>;
+  getPendingVoiceInvocations(): Promise<VoiceInvocation[]>;
+  isVoiceInvocationLaunch(): Promise<boolean>;
+  getPendingRegistrationRequests(): Promise<RegistrationRequest[]>;
+  respondToRegistrationRequest(requestId: string, accept: boolean): Promise<void>;
+  startPhotoCapture(sessionId: string): Promise<void>;
+  stopPhotoCapture(sessionId: string): Promise<void>;
+  captureHighQualityPhoto(sessionId: string, config: PhotoConfiguration): Promise<void>;
+  startCameraStream(sessionId: string): Promise<void>;
+  stopCameraStream(sessionId: string): Promise<void>;
+  mockDeviceSimulate(deviceId: string, event: MockDeviceEvent): Promise<string | boolean | null>;
+  startMockDeviceTestServer(port: number): Promise<number>;
+  stopMockDeviceTestServer(): Promise<void>;
+  mockSimulateRegistrationOutcome(success: boolean): Promise<void>;
 
   // Mock device kit
   enableMockDeviceKit(config: MockDeviceKitConfig): Promise<void>;
@@ -388,4 +426,159 @@ export async function mockSetPermissionRequestResult(
   result: PermissionStatus
 ): Promise<void> {
   return EMWDATModule.mockSetPermissionRequestResult(permission, result);
+}
+
+// DAT 1.0 capabilities (experimental)
+/** Return the live device snapshot associated with a session. */
+export async function getSessionDevice(sessionId: string): Promise<Device | null> {
+  return EMWDATModule.getSessionDevice(sessionId);
+}
+
+/** Experimental: attach inputs. Starts automatically; listen for onInputEvent. */
+export async function addInputsToSession(
+  sessionId: string,
+  config: InputsConfiguration = {}
+): Promise<void> {
+  return EMWDATModule.addInputsToSession(sessionId, config);
+}
+
+/** Detach inputs from a session. */
+export async function removeInputsFromSession(sessionId: string): Promise<void> {
+  return EMWDATModule.removeInputsFromSession(sessionId);
+}
+
+/** Experimental: attach and start motion. Listen for onMotionSample. */
+export async function addMotionToSession(
+  sessionId: string,
+  config: MotionConfiguration = {}
+): Promise<void> {
+  return EMWDATModule.addMotionToSession(sessionId, config);
+}
+
+/** Restart attached motion after stopMotion. */
+export async function startMotion(sessionId: string): Promise<void> {
+  return EMWDATModule.startMotion(sessionId);
+}
+
+/** Pause motion without removing the capability. */
+export async function stopMotion(sessionId: string): Promise<void> {
+  return EMWDATModule.stopMotion(sessionId);
+}
+
+/** Detach motion from a session. */
+export async function removeMotionFromSession(sessionId: string): Promise<void> {
+  return EMWDATModule.removeMotionFromSession(sessionId);
+}
+
+/** Experimental: attach and start speech after microphone permission is granted. */
+export async function addSpeechToSession(sessionId: string): Promise<void> {
+  return EMWDATModule.addSpeechToSession(sessionId);
+}
+
+/** Restart attached speech after stopSpeech. */
+export async function startSpeech(sessionId: string): Promise<void> {
+  return EMWDATModule.startSpeech(sessionId);
+}
+
+/** Stop speech without removing the capability. */
+export async function stopSpeech(sessionId: string): Promise<void> {
+  return EMWDATModule.stopSpeech(sessionId);
+}
+
+/** Detach speech from a session. */
+export async function removeSpeechFromSession(sessionId: string): Promise<void> {
+  return EMWDATModule.removeSpeechFromSession(sessionId);
+}
+
+/** Experimental: start the app-scoped voice stream. No device session is required. */
+export async function startVoiceInvocations(deviceId: string): Promise<void> {
+  return EMWDATModule.startVoiceInvocations(deviceId);
+}
+
+/** Stop voice listening and fail unanswered requests. */
+export async function stopVoiceInvocations(): Promise<void> {
+  return EMWDATModule.stopVoiceInvocations();
+}
+
+/** Answer a voice request once. Returns whether the SDK delivered the response. */
+export async function respondToVoiceInvocation(
+  invocationId: string,
+  success: boolean,
+  actionOutput?: string
+): Promise<boolean> {
+  return EMWDATModule.respondToVoiceInvocation(invocationId, success, actionOutput);
+}
+
+/** Get delivered requests that still need a response, including cold starts. */
+export async function getPendingVoiceInvocations(): Promise<VoiceInvocation[]> {
+  return EMWDATModule.getPendingVoiceInvocations();
+}
+
+/** Android: consume the cold/warm launch flag validated by DAT. iOS returns false. */
+export async function isVoiceInvocationLaunch(): Promise<boolean> {
+  return EMWDATModule.isVoiceInvocationLaunch();
+}
+
+/** Get Meta AI registration requests, including ones received before JS subscribed. */
+export async function getPendingRegistrationRequests(): Promise<RegistrationRequest[]> {
+  return EMWDATModule.getPendingRegistrationRequests();
+}
+
+/** Continue or cancel a Meta AI initiated registration request once. */
+export async function respondToRegistrationRequest(
+  requestId: string,
+  accept: boolean
+): Promise<void> {
+  return EMWDATModule.respondToRegistrationRequest(requestId, accept);
+}
+
+/** Experimental: start the attached camera photo child without starting a video stream. */
+export async function startPhotoCapture(sessionId: string): Promise<void> {
+  return EMWDATModule.startPhotoCapture(sessionId);
+}
+
+/** Stop standalone photo capture. Android photo children are terminal; reattach the camera to capture again. */
+export async function stopPhotoCapture(sessionId: string): Promise<void> {
+  return EMWDATModule.stopPhotoCapture(sessionId);
+}
+
+/** Experimental: capture via Camera.photo. Wait for photo started state first; result arrives by event. */
+export async function captureHighQualityPhoto(
+  sessionId: string,
+  config: PhotoConfiguration = {}
+): Promise<void> {
+  return EMWDATModule.captureHighQualityPhoto(sessionId, config);
+}
+
+/** Start the video stream of an attached camera. Android stopped streams are terminal; reattach the camera. */
+export async function startCameraStream(sessionId: string): Promise<void> {
+  return EMWDATModule.startCameraStream(sessionId);
+}
+
+/** Stop the video stream while retaining the camera and photo child. */
+export async function stopCameraStream(sessionId: string): Promise<void> {
+  return EMWDATModule.stopCameraStream(sessionId);
+}
+
+/** Debug-only: inject a DAT 1.0 mock service event. */
+export async function mockDeviceSimulate(
+  deviceId: string,
+  event: MockDeviceEvent
+): Promise<string | boolean | null> {
+  return EMWDATModule.mockDeviceSimulate(deviceId, event);
+}
+
+/** Debug-only: start the SDK test server and return its bound port. */
+export async function startMockDeviceTestServer(port: number = 0): Promise<number> {
+  return EMWDATModule.startMockDeviceTestServer(port);
+}
+
+/** Debug-only: stop the SDK test server. */
+export async function stopMockDeviceTestServer(): Promise<void> {
+  return EMWDATModule.stopMockDeviceTestServer();
+}
+
+/** Debug-only, Android: simulate a registration outcome. iOS rejects this method. */
+export async function mockSimulateRegistrationOutcome(success: boolean): Promise<void> {
+  return EMWDATModule.mockSimulateRegistrationOutcome(success);
 }

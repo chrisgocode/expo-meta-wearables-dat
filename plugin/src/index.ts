@@ -4,6 +4,7 @@ import {
   withGradleProperties,
   withInfoPlist,
   withPodfileProperties,
+  withPodfile,
   withProjectBuildGradle,
   withXcodeProject,
 } from "expo/config-plugins";
@@ -17,13 +18,22 @@ type EMWDATPluginProps = {
   clientToken?: string;
   /** Custom NSBluetoothAlwaysUsageDescription text */
   bluetoothUsageDescription?: string;
-  /** GitHub token for accessing Meta Wearables Maven packages. Falls back to GITHUB_TOKEN env var. */
+  /** @deprecated DAT 1.0 is on Maven Central; no token is needed. Ignored. */
   githubToken?: string;
   /** Opt out of DAT SDK crash reporting (SDK 0.9+). Default: false. */
   crashReportingOptOut?: boolean;
 };
 
 const EMBED_PHASE_NAME = "Embed MWDAT Frameworks";
+const FRAMEWORKS = [
+  "MWDATCamera",
+  "MWDATCore",
+  "MWDATDisplay",
+  "MWDATMockDevice",
+  "MWDATInputs",
+  "MWDATMotion",
+  "MWDATSpeech",
+];
 
 function addUniqueStringToArray(plist: Record<string, any>, key: string, value: string): void {
   const arr: string[] = plist[key] ?? [];
@@ -58,6 +68,20 @@ const withEMWDAT: ConfigPlugin<EMWDATPluginProps> = (config, props) => {
     return config;
   });
 
+  // CocoaPods' sequential allocator can reuse the project UUID after target UUID
+  // stabilization when RN adds our SPM products. Deterministic UUIDs avoid this.
+  config = withPodfile(config, (config) => {
+    const setting =
+      "install! 'cocoapods', installation_method.last.merge(:deterministic_uuids => true)";
+    if (!config.modResults.contents.includes(setting)) {
+      config.modResults.contents = config.modResults.contents.replace(
+        /^prepare_react_native_project![ \t]*$/m,
+        `prepare_react_native_project!\n# EMWDAT: prevent CocoaPods UUID collisions when adding SPM products.\n${setting}`
+      );
+    }
+    return config;
+  });
+
   // Set deployment target + embed MWDAT dynamic frameworks in the Xcode project
   config = withXcodeProject(config, (config) => {
     const project = config.modResults;
@@ -76,7 +100,7 @@ const withEMWDAT: ConfigPlugin<EMWDATPluginProps> = (config, props) => {
     // doesn't embed them — we add a shell script build phase to copy + sign them.
     const target = project.getFirstTarget().uuid;
     const shellScript = `
-FRAMEWORKS=("MWDATCamera" "MWDATCore" "MWDATDisplay" "MWDATMockDevice")
+FRAMEWORKS=(${FRAMEWORKS.map((fw) => `"${fw}"`).join(" ")})
 for fw in "\${FRAMEWORKS[@]}"; do
   SRC="\${BUILT_PRODUCTS_DIR}/\${fw}.framework"
   DST="\${BUILT_PRODUCTS_DIR}/\${FRAMEWORKS_FOLDER_PATH}/\${fw}.framework"
@@ -93,31 +117,29 @@ done
     // Idempotent: `expo prebuild` without `--clean` re-runs this mod against the existing
     // project. Adding the phase again yields "Multiple commands produce ...framework".
     const shellScriptPhases = project.hash?.project?.objects?.PBXShellScriptBuildPhase ?? {};
-    const alreadyEmbedded = Object.entries(shellScriptPhases).some(
+    const existingPhase = Object.entries(shellScriptPhases).find(
       ([key, phase]: [string, any]) =>
         !key.endsWith("_comment") &&
         typeof phase === "object" &&
         String(phase?.name ?? "").replace(/"/g, "") === EMBED_PHASE_NAME
     );
-    if (alreadyEmbedded) {
+    const inputPaths = FRAMEWORKS.map((fw) => `"\${BUILT_PRODUCTS_DIR}/${fw}.framework"`);
+    const outputPaths = FRAMEWORKS.map(
+      (fw) => `"\${BUILT_PRODUCTS_DIR}/\${FRAMEWORKS_FOLDER_PATH}/${fw}.framework"`
+    );
+    if (existingPhase) {
+      const phase = existingPhase[1] as Record<string, any>;
+      phase.shellScript = JSON.stringify(shellScript);
+      phase.inputPaths = inputPaths;
+      phase.outputPaths = outputPaths;
       return config;
     }
 
     project.addBuildPhase([], "PBXShellScriptBuildPhase", EMBED_PHASE_NAME, target, {
       shellPath: "/bin/sh",
       shellScript,
-      inputPaths: [
-        '"${BUILT_PRODUCTS_DIR}/MWDATCamera.framework"',
-        '"${BUILT_PRODUCTS_DIR}/MWDATCore.framework"',
-        '"${BUILT_PRODUCTS_DIR}/MWDATDisplay.framework"',
-        '"${BUILT_PRODUCTS_DIR}/MWDATMockDevice.framework"',
-      ],
-      outputPaths: [
-        '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATCamera.framework"',
-        '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATCore.framework"',
-        '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATDisplay.framework"',
-        '"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/MWDATMockDevice.framework"',
-      ],
+      inputPaths,
+      outputPaths,
     });
 
     return config;
@@ -168,28 +190,13 @@ done
   // Android Configuration
   // =========================================================================
 
-  // Add GitHub Packages Maven repository for Meta Wearables DAT SDK
+  // DAT 1.0 is published to Maven Central, already included by Expo.
+  // Remove the repository injected by earlier versions during incremental prebuild.
   config = withProjectBuildGradle(config, (config) => {
-    const githubToken = props.githubToken ?? "";
-    const mavenBlock = `
-        maven {
-            url = uri("https://maven.pkg.github.com/facebook/meta-wearables-dat-android")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR") ?: ""
-                password = System.getenv("GITHUB_TOKEN") ?: "${githubToken}"
-            }
-        }`;
-
-    const contents = config.modResults.contents;
-
-    // Inject into allprojects.repositories block (standard React Native layout)
-    if (contents.includes("allprojects")) {
-      config.modResults.contents = contents.replace(
-        /(allprojects\s*\{[\s\S]*?repositories\s*\{)/,
-        `$1${mavenBlock}`
-      );
-    }
-
+    config.modResults.contents = config.modResults.contents.replace(
+      /\s*maven\s*\{\s*url\s*=\s*uri\("https:\/\/maven\.pkg\.github\.com\/facebook\/meta-wearables-dat-android"\)[\s\S]*?credentials\s*\{[^}]*\}\s*\}/g,
+      ""
+    );
     return config;
   });
 
@@ -227,6 +234,7 @@ done
         permissions.push({ $: { "android:name": name } });
       }
     };
+    addPermission("android.permission.INTERNET");
     addPermission("android.permission.BLUETOOTH");
     addPermission("android.permission.BLUETOOTH_CONNECT");
     manifest.manifest["uses-permission"] = permissions;
