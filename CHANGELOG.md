@@ -1,3 +1,9 @@
+# [2.2.0](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.1.2...v2.2.0) (2026-10-03)
+
+### Features
+
+- upgrade to DAT 1.0 and expose experimental capabilities ([85cb78b](https://github.com/chrisgocode/expo-meta-wearables-dat/commit/85cb78b7b959f449a521e832a66c70b327550f64))
+
 ## [2.1.2](https://github.com/chrisgocode/expo-meta-wearables-dat/compare/v2.1.1...v2.1.2) (2026-09-12)
 
 ### Bug Fixes
