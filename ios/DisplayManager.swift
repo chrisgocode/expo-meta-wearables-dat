@@ -250,13 +250,14 @@ public final class DisplayManager {
             }
         }
 
-        let button = Button(
+        var button = Button(
             label: label,
             style: mapButtonStyle(node["style"] as? String),
             iconName: iconName,
             onClick: onClick
         )
 
+        if node["actionRole"] as? String == "primary" { button = button.actionRole(.primary) }
         return applyFlexChildProps(button, node) { $0.flexGrow($1) } shrink: { $0.flexShrink($1) }
             alignSelf: { $0.alignSelf($1) }
     }
@@ -331,10 +332,6 @@ public final class DisplayManager {
     public func emitDisplayError(sessionId: String, error: DisplayError) {
         var body: [String: Any] = ["sessionId": sessionId]
         switch error {
-        case .deviceNotFound:
-            body["type"] = "deviceNotFound"
-        case .connectionNotAvailable:
-            body["type"] = "connectionNotAvailable"
         case .deviceDisconnected:
             body["type"] = "deviceDisconnected"
         case .invalidVideoURL:

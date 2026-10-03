@@ -27,7 +27,7 @@ export type RegistrationState =
 // PERMISSIONS
 // =============================================================================
 
-export type Permission = "camera";
+export type Permission = "camera" | "microphone";
 
 export type PermissionStatus = "granted" | "denied";
 
@@ -54,7 +54,7 @@ export type DeviceType =
   | "metaGlasses"
   | "unknown";
 
-export interface Device {
+export interface Device extends Partial<DeviceState> {
   identifier: DeviceIdentifier;
   name: string;
   linkState: LinkState;
@@ -76,8 +76,19 @@ export type ThermalLevel =
   | "shutdown";
 
 /** Live device state (SDK 0.7+). */
+export type ChargingState = "unknown" | "charging" | "notCharging";
+export type DonState = "unknown" | "doffed" | "donned";
+export type HingeState = "unknown" | "closed" | "open";
+
 export interface DeviceState {
   thermalLevel: ThermalLevel;
+  /** 0–100, or null (iOS) / -1 (Android) when unavailable. */
+  batteryLevel?: number | null;
+  chargingState?: ChargingState;
+  donState?: DonState;
+  hingeState?: HingeState;
+  linkState?: LinkState;
+  compatibility?: Compatibility;
 }
 
 // =============================================================================
@@ -103,6 +114,10 @@ export interface StreamConfiguration {
    * Default: false.
    */
   compressVideo?: boolean;
+  /** Experimental PCM audio. Requires DAT microphone permission. Omit for video only. */
+  audioCodec?: { sampleRate: 16000 | 44100 | 48000; numberOfChannels: 1 | 2 };
+  /** Attach the camera without starting video, for standalone photo capture. Default: true. */
+  startStream?: boolean;
 }
 
 /** @deprecated Renamed to {@link StreamConfiguration} to match SDK 0.7+. */
@@ -200,6 +215,8 @@ export type DeviceSessionErrorCode =
   | "peakPowerShutdown"
   | "batteryCritical"
   | "datAppOnTheGlassesUpdateRequired"
+  | "insufficientSDKVersion"
+  | "dwaOutOfStuRange"
   | "dwaUnavailable"
   | "unexpectedError";
 
@@ -218,7 +235,7 @@ export type CapabilityState = "active" | "stopped";
 export interface MockDeviceKitConfig {
   /** Whether to start in registered state. Default: true. */
   initiallyRegistered?: boolean;
-  /** Whether camera permission starts as granted. Default: true. */
+  /** Whether camera and microphone permissions start as granted. Default: true. */
   initialPermissionsGranted?: boolean;
 }
 
@@ -228,7 +245,8 @@ export type GlassesModel =
   | "oakleyMetaHSTN"
   | "oakleyMetaVanguard"
   | "rayBanMetaOptics"
-  | "metaGlasses";
+  | "metaGlasses"
+  | "metaRayBanDisplay";
 
 /**
  * Which phone camera to use as mock device camera source.
@@ -243,6 +261,11 @@ export type WearablesErrorCode =
   | "internalError"
   | "alreadyConfigured"
   | "configurationError"
+  | "missingInfoDictionary"
+  | "missingBundleIdentifier"
+  | "missingAppName"
+  | "missingAppVersion"
+  | "missingBuildNumber"
   | "notInitialized";
 
 export type RegistrationErrorCode =
@@ -279,11 +302,9 @@ export type WearablesHandleURLErrorCode = "registrationError" | "unregistrationE
 /**
  * Discriminated union — errors with associated values carry extra fields.
  *
- * iOS reports `internalError`, `deviceNotFound`, `deviceNotConnected`, `videoStreamingError`,
- * `thermalCritical`, `thermalEmergency`, `peakPowerShutdown`, `batteryCritical` and
- * `photoCaptureFailed`. Android reports `videoStreamingError` (STREAM_ERROR),
- * `criticalStreamError`, `thermalHot`, `batteryLow` and `peakPowerLimit`.
- * `timeout`, `permissionDenied` and `hingesClosed` exist on both.
+ * DAT 1.0 reports `thermalHot`, `batteryLow`, and `peakPowerLimit`.
+ * iOS additionally reports `audioStreamingError`. Legacy health cases remain accepted
+ * for compatibility with older bridge consumers.
  */
 export type StreamError =
   | { type: "internalError" }
@@ -292,6 +313,7 @@ export type StreamError =
   | { type: "deviceNotConnected"; deviceId: DeviceIdentifier }
   | { type: "timeout" }
   | { type: "videoStreamingError" }
+  | { type: "audioStreamingError" }
   | { type: "permissionDenied" }
   | { type: "hingesClosed" }
   | { type: "thermalCritical" }
@@ -559,6 +581,8 @@ export interface DisplayButtonNode extends DisplayFlexChildProps {
   style?: DisplayButtonStyle;
   iconName?: IconName;
   onTap?: () => void;
+  /** SDK 1.0: first primary action receives initial focus. */
+  actionRole?: "primary";
 }
 
 export interface DisplayImageNode extends DisplayFlexChildProps {
@@ -625,13 +649,38 @@ export type SerializedDisplayNode = {
 
 /** Event map — function signatures as required by Expo NativeModule<EventsMap>. */
 export type EMWDATModuleEvents = {
+  onInputEvent: (payload: { sessionId: string } & InputEvent) => void;
+  onMotionSample: (payload: { sessionId: string } & MotionSample) => void;
+  onTranscription: (payload: { sessionId: string } & TranscriptionResult) => void;
+  onSpeechLocaleChange: (payload: { sessionId: string; locale: string }) => void;
+  onExperimentalCapabilityStateChange: (payload: {
+    sessionId: string;
+    capability: ExperimentalCapability;
+    state: ExperimentalCapabilityState;
+  }) => void;
+  onExperimentalCapabilityError: (payload: {
+    sessionId: string;
+    capability: ExperimentalCapability;
+    error: string;
+    message: string;
+  }) => void;
+  onVoiceInvocation: (payload: VoiceInvocation) => void;
+  onVoiceInvocationLaunch: (payload: { launched: boolean }) => void;
+  onVoiceInvocationStateChange: (payload: { state: "starting" | "started" | "stopped" }) => void;
+  onVoiceInvocationError: (payload: { error: string; message: string }) => void;
+  onRegistrationRequest: (payload: RegistrationRequest) => void;
+  onHighQualityPhotoCaptured: (payload: PhotoCaptureData) => void;
+  onPhotoTransferProgress: (payload: {
+    sessionId: string;
+    bytesReceived: number;
+    totalBytes: number;
+    fraction: number;
+  }) => void;
+  onAudioFrame: (payload: AudioFrame) => void;
   onRegistrationStateChange: (payload: { state: RegistrationState }) => void;
   onDevicesChange: (payload: { devices: Device[] }) => void;
   onLinkStateChange: (payload: { deviceId: DeviceIdentifier; linkState: LinkState }) => void;
-  onDeviceStateChange: (payload: {
-    deviceId: DeviceIdentifier;
-    thermalLevel: ThermalLevel;
-  }) => void;
+  onDeviceStateChange: (payload: { deviceId: DeviceIdentifier } & DeviceState) => void;
   onStreamStateChange: (payload: { sessionId: string; state: StreamState }) => void;
   onCameraStateChange: (payload: { sessionId: string; state: CameraState }) => void;
   onVideoFrame: (payload: VideoFrameMetadata) => void;
@@ -780,6 +829,8 @@ export interface UseMetaWearablesReturn {
 export type StreamViewResizeMode = "contain" | "cover" | "stretch";
 
 export interface EMWDATStreamViewProps {
+  /** Debug-only: show this mock display device’s local preview instead of video. */
+  mockDisplayDeviceId?: string;
   isActive?: boolean;
   resizeMode?: StreamViewResizeMode;
   style?: StyleProp<ViewStyle>;
@@ -798,8 +849,114 @@ export interface EMWDATPluginProps {
   clientToken?: string;
   /** Custom NSBluetoothAlwaysUsageDescription */
   bluetoothUsageDescription?: string;
-  /** GitHub token for accessing Meta Wearables Maven packages. Falls back to GITHUB_TOKEN env var. */
+  /** @deprecated DAT 1.0 is on Maven Central; no token is needed. Ignored. */
   githubToken?: string;
   /** Opt out of DAT SDK crash reporting (SDK 0.9+). Default: false. */
   crashReportingOptOut?: boolean;
 }
+
+// DAT 1.0 experimental capabilities. Enable each capability in Wearables Developer Center.
+export type InputSource =
+  | "captouch"
+  | "neuralBand"
+  | "captureButton"
+  | "actionButton"
+  | "neuralBandDrag"
+  | "unknown";
+export type NavDirection = "up" | "down" | "left" | "right";
+export type DragAction = "down" | "move" | "up";
+export type CapturePressType = "shortPress" | "hold" | "doublePress";
+export interface InputsConfiguration {
+  sources?: InputSource[];
+  consumeBack?: boolean;
+}
+export type InputEvent = { source: InputSource; timestampMs: number } & (
+  | { type: "nav"; direction: NavDirection }
+  | { type: "select" | "back" }
+  | { type: "button"; button: "action" }
+  | { type: "capture"; pressType: CapturePressType }
+  | { type: "drag"; action: DragAction; x: number; y: number; dx: number; dy: number }
+);
+export interface Vector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+export interface Quaternion extends Vector3 {
+  w: number;
+}
+export interface MotionSample {
+  /** Device monotonic clock, encoded as decimal text to preserve Int64 precision. */
+  timestampNs: string;
+  source: "glasses" | "neuralBand" | "unknown";
+  accelerometer?: Vector3;
+  gyroscope?: Vector3;
+  magnetometer?: Vector3;
+  orientation?: Quaternion;
+}
+export interface MotionConfiguration {
+  samplingRate?: 5 | 10 | 15 | 24 | 30 | 60;
+}
+export interface TranscriptionResult {
+  text: string;
+  isFinal: boolean;
+  confidence: number;
+}
+export type ExperimentalCapability = "inputs" | "motion" | "speech" | "photo";
+export type ExperimentalCapabilityState =
+  | "inactive"
+  | "activating"
+  | "active"
+  | "deactivating"
+  | "stopped"
+  | "starting"
+  | "started"
+  | "stopping"
+  | "paused";
+export interface VoiceInvocation {
+  invocationId: string;
+  type: "launchApp";
+  deviceId?: DeviceIdentifier;
+}
+export interface RegistrationRequest {
+  requestId: string;
+  flowId: string;
+  protocolVersion: number;
+}
+export interface PhotoConfiguration {
+  resolution?: "small" | "medium" | "large" | "full";
+  quality?: "low" | "medium" | "high";
+}
+export interface PhotoCaptureData {
+  sessionId: string;
+  filePath: string;
+  /** Raw SDK metadata; base64 encoded, omitted if absent. */
+  metadataBase64?: string;
+  timestamp: number;
+}
+export interface AudioFrame {
+  sessionId: string;
+  /** Base64 PCM bytes. iOS uses planar Float32; Android uses interleaved Int16. */
+  data: string;
+  encoding: "float32" | "int16";
+  interleaved: boolean;
+  sampleRate: number;
+  numberOfChannels: number;
+  presentationTimeUs: number;
+}
+/** Debug-only injections into the DAT 1.0 MockDeviceKit services. */
+export type MockDeviceEvent =
+  | { type: "battery"; level: number | null }
+  | { type: "charging"; state: ChargingState }
+  | { type: "thermal"; level: ThermalLevel }
+  | { type: "input"; event: InputEvent }
+  | { type: "motionFeed"; fileUrl: string }
+  | { type: "transcription"; text: string; isFinal?: boolean; confidence?: number }
+  | { type: "speechLocale"; locale: string }
+  | { type: "speechError"; code: number; message: string }
+  | { type: "speechCompletion" }
+  | { type: "speechSource"; live: boolean }
+  | { type: "launchApp" | "incompleteVoiceInvocation" }
+  | { type: "capturedPhoto"; fileUrl: string }
+  | { type: "photoFailure" }
+  | { type: "displayClick"; identifier: string };

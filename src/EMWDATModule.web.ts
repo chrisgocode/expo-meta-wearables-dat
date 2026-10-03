@@ -9,6 +9,87 @@ function unsupported(): never {
 }
 
 class EMWDATWebModule extends NativeModule<EMWDATModuleEvents> {
+  getSessionDevice(): Promise<never> {
+    unsupported();
+  }
+  addInputsToSession(): Promise<never> {
+    unsupported();
+  }
+  removeInputsFromSession(): Promise<never> {
+    unsupported();
+  }
+  addMotionToSession(): Promise<never> {
+    unsupported();
+  }
+  startMotion(): Promise<never> {
+    unsupported();
+  }
+  stopMotion(): Promise<never> {
+    unsupported();
+  }
+  removeMotionFromSession(): Promise<never> {
+    unsupported();
+  }
+  addSpeechToSession(): Promise<never> {
+    unsupported();
+  }
+  startSpeech(): Promise<never> {
+    unsupported();
+  }
+  stopSpeech(): Promise<never> {
+    unsupported();
+  }
+  removeSpeechFromSession(): Promise<never> {
+    unsupported();
+  }
+  startVoiceInvocations(): Promise<never> {
+    unsupported();
+  }
+  stopVoiceInvocations(): Promise<never> {
+    unsupported();
+  }
+  respondToVoiceInvocation(): Promise<never> {
+    unsupported();
+  }
+  getPendingVoiceInvocations(): Promise<never> {
+    unsupported();
+  }
+  isVoiceInvocationLaunch(): Promise<never> {
+    unsupported();
+  }
+  getPendingRegistrationRequests(): Promise<never> {
+    unsupported();
+  }
+  respondToRegistrationRequest(): Promise<never> {
+    unsupported();
+  }
+  startPhotoCapture(): Promise<never> {
+    unsupported();
+  }
+  stopPhotoCapture(): Promise<never> {
+    unsupported();
+  }
+  captureHighQualityPhoto(): Promise<never> {
+    unsupported();
+  }
+  startCameraStream(): Promise<never> {
+    unsupported();
+  }
+  stopCameraStream(): Promise<never> {
+    unsupported();
+  }
+  mockDeviceSimulate(): Promise<never> {
+    unsupported();
+  }
+  startMockDeviceTestServer(): Promise<never> {
+    unsupported();
+  }
+  stopMockDeviceTestServer(): Promise<never> {
+    unsupported();
+  }
+  mockSimulateRegistrationOutcome(): Promise<never> {
+    unsupported();
+  }
   setLogLevel(): void {
     unsupported();
   }
@@ -298,5 +379,87 @@ export async function mockSetPermissionStatus(): Promise<void> {
   unsupported();
 }
 export async function mockSetPermissionRequestResult(): Promise<void> {
+  unsupported();
+}
+
+export async function getSessionDevice(): Promise<never> {
+  unsupported();
+}
+export async function addInputsToSession(): Promise<never> {
+  unsupported();
+}
+export async function removeInputsFromSession(): Promise<never> {
+  unsupported();
+}
+export async function addMotionToSession(): Promise<never> {
+  unsupported();
+}
+export async function startMotion(): Promise<never> {
+  unsupported();
+}
+export async function stopMotion(): Promise<never> {
+  unsupported();
+}
+export async function removeMotionFromSession(): Promise<never> {
+  unsupported();
+}
+export async function addSpeechToSession(): Promise<never> {
+  unsupported();
+}
+export async function startSpeech(): Promise<never> {
+  unsupported();
+}
+export async function stopSpeech(): Promise<never> {
+  unsupported();
+}
+export async function removeSpeechFromSession(): Promise<never> {
+  unsupported();
+}
+export async function startVoiceInvocations(): Promise<never> {
+  unsupported();
+}
+export async function stopVoiceInvocations(): Promise<never> {
+  unsupported();
+}
+export async function respondToVoiceInvocation(): Promise<never> {
+  unsupported();
+}
+export async function getPendingVoiceInvocations(): Promise<never> {
+  unsupported();
+}
+export async function isVoiceInvocationLaunch(): Promise<never> {
+  unsupported();
+}
+export async function getPendingRegistrationRequests(): Promise<never> {
+  unsupported();
+}
+export async function respondToRegistrationRequest(): Promise<never> {
+  unsupported();
+}
+export async function startPhotoCapture(): Promise<never> {
+  unsupported();
+}
+export async function stopPhotoCapture(): Promise<never> {
+  unsupported();
+}
+export async function captureHighQualityPhoto(): Promise<never> {
+  unsupported();
+}
+export async function startCameraStream(): Promise<never> {
+  unsupported();
+}
+export async function stopCameraStream(): Promise<never> {
+  unsupported();
+}
+export async function mockDeviceSimulate(): Promise<never> {
+  unsupported();
+}
+export async function startMockDeviceTestServer(): Promise<never> {
+  unsupported();
+}
+export async function stopMockDeviceTestServer(): Promise<never> {
+  unsupported();
+}
+export async function mockSimulateRegistrationOutcome(): Promise<never> {
   unsupported();
 }

@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVFoundation
 import MWDATCore
 import MWDATCamera
 
@@ -25,6 +26,8 @@ public final class CameraSessionManager {
     private var stateTokens: [String: AnyListenerToken] = [:]
     private var frameTokens: [String: AnyListenerToken] = [:]
     private var errorTokens: [String: AnyListenerToken] = [:]
+    private var audioTokens: [String: AnyListenerToken] = [:]
+    private var captureTokens: [String: [AnyListenerToken]] = [:]
     private var photoTokens: [String: AnyListenerToken] = [:]
     private var hevcDecoders: [String: HEVCDecoder] = [:]
 
@@ -59,10 +62,12 @@ public final class CameraSessionManager {
     // MARK: - Camera Capability Control
 
     /// Add the camera capability to a device session and start its stream.
-    public func addCameraToSession(sessionId: String, config: StreamConfiguration) throws {
+    public func addCameraToSession(sessionId: String, config: StreamConfiguration, startStream: Bool = true) throws {
         guard let session = WearablesManager.shared.getSession(sessionId: sessionId) else {
             throw CameraSessionManagerError.sessionNotFound(sessionId)
         }
+
+        guard cameras[sessionId] == nil else { throw CameraSessionManagerError.cameraNotAvailable(sessionId) }
 
         logger.info("Camera", "Adding camera to session", context: [
             "sessionId": sessionId,
@@ -121,8 +126,23 @@ public final class CameraSessionManager {
             }
         }
 
-        // Start the stream (synchronous since SDK 0.8)
-        stream.start()
+        if config.audioCodec != nil {
+            audioTokens[sessionId] = stream.audioFramePublisher.listen { [weak self] frame in
+                let buffer = frame.pcmBuffer
+                let buffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+                var bytes = Data()
+                for item in buffers {
+                    if let pointer = item.mData { bytes.append(pointer.assumingMemoryBound(to: UInt8.self), count: Int(item.mDataByteSize)) }
+                }
+                let body: [String: Any] = ["sessionId": sessionId, "data": bytes.base64EncodedString(),
+                    "encoding": buffer.format.commonFormat == .pcmFormatFloat32 ? "float32" : "int16",
+                    "interleaved": buffer.format.isInterleaved, "sampleRate": buffer.format.sampleRate,
+                    "numberOfChannels": buffer.format.channelCount,
+                    "presentationTimeUs": CMTimeGetSeconds(frame.presentationTimeStamp) * 1_000_000]
+                Task { @MainActor in self?.emitEvent("onAudioFrame", body) }
+            }
+        }
+        if startStream { stream.start() }
 
         // Emit initial capability state
         emitEvent("onCapabilityStateChange", [
@@ -156,6 +176,61 @@ public final class CameraSessionManager {
 
         logger.info("Camera", "Capturing photo", context: ["format": String(describing: format)])
         return camera.stream.capturePhoto(format: format)
+    }
+
+    public func startCameraStream(_ id: String) throws {
+        guard let camera = cameras[id] else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        camera.stream.start()
+    }
+    public func stopCameraStream(_ id: String) throws {
+        guard let camera = cameras[id] else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        camera.stream.stop()
+    }
+    public func startPhotoCapture(_ id: String) throws {
+        guard let camera = cameras[id] else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        guard captureTokens[id] == nil else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        let photo = camera.photo
+        captureTokens[id] = [
+            photo.statePublisher.listen { [weak self] state in
+                let name: String
+                switch state { case .stopped: name = "stopped"; case .starting: name = "starting";
+                case .started: name = "started"; case .stopping: name = "stopping"; @unknown default: name = "stopped" }
+                Task { @MainActor in self?.emitEvent("onExperimentalCapabilityStateChange", ["sessionId": id, "capability": "photo", "state": name]) }
+            },
+            photo.errorPublisher.listen { [weak self] error in
+                Task { @MainActor in self?.emitEvent("onExperimentalCapabilityError", ["sessionId": id, "capability": "photo", "error": String(describing: error), "message": error.description]) }
+            },
+            photo.transferProgressPublisher.listen { [weak self] progress in
+                Task { @MainActor in self?.emitEvent("onPhotoTransferProgress", ["sessionId": id, "bytesReceived": progress.bytesReceived, "totalBytes": progress.totalBytes, "fraction": progress.fraction]) }
+            },
+            photo.photoDataPublisher.listen { [weak self] data in
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("emwdat_capture_\(UUID().uuidString).jpg")
+                do {
+                    try data.imageData.write(to: file)
+                    var body: [String: Any] = ["sessionId": id, "filePath": file.path, "timestamp": data.timestamp.timeIntervalSince1970 * 1000]
+                    if let metadata = data.metadata { body["metadataBase64"] = metadata.base64EncodedString() }
+                    Task { @MainActor in self?.emitEvent("onHighQualityPhotoCaptured", body) }
+                } catch {
+                    let message = error.localizedDescription
+                    Task { @MainActor in self?.emitEvent("onExperimentalCapabilityError", ["sessionId": id, "capability": "photo", "error": "saveFailed", "message": message]) }
+                }
+            }
+        ]
+        photo.start()
+    }
+    public func stopPhotoCapture(_ id: String) throws {
+        guard let camera = cameras[id], captureTokens[id] != nil else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        camera.photo.stop()
+        let tokens = captureTokens.removeValue(forKey: id) ?? []
+        Task { for token in tokens { await token.cancel() } }
+    }
+    public func captureHighQualityPhoto(_ id: String, config: [String: Any]) throws {
+        guard let camera = cameras[id], captureTokens[id] != nil else { throw CameraSessionManagerError.cameraNotAvailable(id) }
+        guard let resolution = PhotoResolution(rawValue: config["resolution"] as? String ?? "medium"),
+              let quality = PhotoQuality(rawValue: config["quality"] as? String ?? "medium") else {
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid photo resolution or quality"])
+        }
+        camera.photo.capturePhoto(resolution: resolution, quality: quality)
     }
 
     // MARK: - Event Handlers
@@ -259,6 +334,9 @@ public final class CameraSessionManager {
         cancel(&frameTokens, sessionId)
         cancel(&errorTokens, sessionId)
         cancel(&photoTokens, sessionId)
+        cancel(&audioTokens, sessionId)
+        let tokens = captureTokens.removeValue(forKey: sessionId) ?? []
+        Task { for token in tokens { await token.cancel() } }
         cameras[sessionId] = nil
         hevcDecoders[sessionId]?.invalidate()
         hevcDecoders[sessionId] = nil
@@ -321,18 +399,18 @@ public final class CameraSessionManager {
             return ["type": "permissionDenied"]
         case .internalError:
             return ["type": "internalError"]
+        case .audioStreamingError:
+            return ["type": "audioStreamingError"]
         case .videoStreamingError:
             return ["type": "videoStreamingError"]
         case .hingesClosed:
             return ["type": "hingesClosed"]
-        case .thermalCritical:
-            return ["type": "thermalCritical"]
-        case .thermalEmergency:
-            return ["type": "thermalEmergency"]
-        case .peakPowerShutdown:
-            return ["type": "peakPowerShutdown"]
-        case .batteryCritical:
-            return ["type": "batteryCritical"]
+        case .thermalHot:
+            return ["type": "thermalHot"]
+        case .peakPowerLimit:
+            return ["type": "peakPowerLimit"]
+        case .batteryLow:
+            return ["type": "batteryLow"]
         case .photoCaptureFailed:
             return ["type": "photoCaptureFailed"]
         @unknown default:
@@ -353,7 +431,7 @@ public final class CameraSessionManager {
 
 extension CameraSessionManager {
     /// Parse configuration from JavaScript object
-    nonisolated public static func parseConfig(from dict: [String: Any]) -> StreamConfiguration {
+    nonisolated public static func parseConfig(from dict: [String: Any]) throws -> StreamConfiguration {
         let videoCodec: VideoCodec
         let compressVideo = dict["compressVideo"] as? Bool ?? false
         if compressVideo || (dict["videoCodec"] as? String) == "hvc1" {
@@ -375,8 +453,21 @@ extension CameraSessionManager {
 
         let frameRate = dict["frameRate"] as? Int ?? 15
 
+        guard [2, 7, 15, 24, 30].contains(frameRate) else {
+            throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid frame rate"])
+        }
+        var audioCodec: MWDATCamera.AudioCodec?
+        if let audio = dict["audioCodec"] as? [String: Any] {
+            let sampleRate = audio["sampleRate"] as? Int ?? 0
+            guard sampleRate > 0, let rate = AudioSampleRate(rawValue: UInt(sampleRate)),
+                  let channels = audio["numberOfChannels"] as? Int, [1, 2].contains(channels) else {
+                throw NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid audio codec configuration"])
+            }
+            audioCodec = .pcm(sampleRate: rate, numberOfChannels: UInt32(channels))
+        }
         return StreamConfiguration(
             videoCodec: videoCodec,
+            audioCodec: audioCodec,
             resolution: resolution,
             frameRate: UInt(frameRate)
         )

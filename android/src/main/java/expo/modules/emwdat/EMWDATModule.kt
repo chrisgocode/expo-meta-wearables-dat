@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import expo.modules.kotlin.functions.Coroutine
+import expo.modules.kotlin.functions.Queues
+import kotlinx.coroutines.withContext
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +51,10 @@ class EMWDATModule : Module() {
             "onDisplayStateChange",
             "onDisplayTap",
             "onDisplayError",
-            "onDisplayVideoEvent"
+            "onDisplayVideoEvent", "onInputEvent", "onMotionSample", "onTranscription", "onSpeechLocaleChange",
+            "onExperimentalCapabilityStateChange", "onExperimentalCapabilityError", "onVoiceInvocation", "onVoiceInvocationLaunch",
+            "onVoiceInvocationStateChange", "onVoiceInvocationError", "onRegistrationRequest", "onHighQualityPhotoCaptured",
+            "onPhotoTransferProgress", "onAudioFrame"
         )
 
         OnCreate {
@@ -62,14 +68,18 @@ class EMWDATModule : Module() {
             CameraSessionManager.setScope(moduleScope)
             DisplayManager.setEventEmitter(emitter)
             DisplayManager.setScope(moduleScope)
+            ExperimentalCapabilitiesManager.configure(emitter, moduleScope)
         }
 
         OnDestroy {
             logger.info("Module", "Module destroyed")
-            CameraSessionManager.destroy()
-            DisplayManager.destroy()
-            WearablesManager.cleanup()
-            moduleScope.cancel()
+            moduleScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                ExperimentalCapabilitiesManager.destroy()
+                CameraSessionManager.destroy()
+                DisplayManager.destroy()
+                WearablesManager.cleanup()
+                moduleScope.cancel()
+            }
         }
 
         // MARK: - Logging
@@ -102,6 +112,7 @@ class EMWDATModule : Module() {
             }
 
             WearablesManager.configure(context)
+            appContext.currentActivity?.intent?.let { ExperimentalCapabilitiesManager.handleIntent(it) }
         }
 
         // MARK: - Registration
@@ -134,24 +145,16 @@ class EMWDATModule : Module() {
 
         // MARK: - Permissions
 
-        AsyncFunction("checkPermissionStatus") { permission: String ->
-            if (permission != "camera") return@AsyncFunction "denied"
-            runBlocking {
-                WearablesManager.checkPermissionStatus(
-                    com.meta.wearable.dat.core.types.Permission.CAMERA
-                )
-            }
+        AsyncFunction("checkPermissionStatus") Coroutine { permission: String ->
+            require(permission == "camera" || permission == "microphone") { "Unknown permission: $permission" }
+            WearablesManager.checkPermissionStatus(if (permission == "camera") com.meta.wearable.dat.core.types.Permission.CAMERA else com.meta.wearable.dat.core.types.Permission.MICROPHONE)
         }
 
-        AsyncFunction("requestPermission") { permission: String ->
-            if (permission != "camera") throw Exception("Unknown permission: $permission")
-            val activity = appContext.currentActivity
-                ?: throw Exception("Current activity not available")
-            runBlocking {
-                WearablesManager.requestPermission(
-                    activity,
-                    com.meta.wearable.dat.core.types.Permission.CAMERA
-                )
+        AsyncFunction("requestPermission") Coroutine { permission: String ->
+            require(permission == "camera" || permission == "microphone") { "Unknown permission: $permission" }
+            withContext(Dispatchers.Main) {
+                WearablesManager.requestPermission(checkNotNull(appContext.currentActivity),
+                    if (permission == "camera") com.meta.wearable.dat.core.types.Permission.CAMERA else com.meta.wearable.dat.core.types.Permission.MICROPHONE)
             }
         }
 
@@ -351,9 +354,95 @@ class EMWDATModule : Module() {
             MockDeviceManager.setPermissionRequestResult(context, permission, result)
         }
 
+
+        OnNewIntent { intent -> ExperimentalCapabilitiesManager.handleIntent(intent) }
+
+        AsyncFunction("addInputsToSession") { id: String, config: Map<String, Any> ->
+            ExperimentalCapabilitiesManager.addInputs(id, config)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("removeInputsFromSession") { id: String ->
+            ExperimentalCapabilitiesManager.removeInputs(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("addMotionToSession") { id: String, config: Map<String, Any> ->
+            ExperimentalCapabilitiesManager.addMotion(id, config)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startMotion") { id: String ->
+            ExperimentalCapabilitiesManager.startMotion(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("stopMotion") { id: String ->
+            ExperimentalCapabilitiesManager.stopMotion(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("removeMotionFromSession") { id: String ->
+            ExperimentalCapabilitiesManager.removeMotion(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("addSpeechToSession") { id: String ->
+            ExperimentalCapabilitiesManager.addSpeech(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startSpeech") { id: String ->
+            ExperimentalCapabilitiesManager.startSpeech(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("stopSpeech") { id: String ->
+            ExperimentalCapabilitiesManager.stopSpeech(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("removeSpeechFromSession") { id: String ->
+            ExperimentalCapabilitiesManager.removeSpeech(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startVoiceInvocations") { id: String ->
+            ExperimentalCapabilitiesManager.startVoice(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startPhotoCapture") { id: String ->
+            CameraSessionManager.startPhotoCapture(id, checkNotNull(appContext.reactContext))
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("stopPhotoCapture") { id: String ->
+            CameraSessionManager.stopPhotoCapture(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("captureHighQualityPhoto") { id: String, config: Map<String, Any> ->
+            CameraSessionManager.captureHighQualityPhoto(id, config)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startCameraStream") { id: String ->
+            CameraSessionManager.startCameraStream(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("stopCameraStream") { id: String ->
+            CameraSessionManager.stopCameraStream(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("stopVoiceInvocations") Coroutine { ->
+            withContext(Dispatchers.Main) { ExperimentalCapabilitiesManager.stopVoice() }
+        }
+        AsyncFunction("respondToVoiceInvocation") Coroutine { id: String, success: Boolean, output: String? ->
+            withContext(Dispatchers.Main) { ExperimentalCapabilitiesManager.respondToVoice(id, success, output) }
+        }
+        AsyncFunction("getPendingVoiceInvocations") { ExperimentalCapabilitiesManager.getPendingVoiceInvocations() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("isVoiceInvocationLaunch") { ExperimentalCapabilitiesManager.consumeVoiceLaunch() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("getPendingRegistrationRequests") { ExperimentalCapabilitiesManager.getPendingRegistrationRequests() }.runOnQueue(Queues.MAIN)
+        AsyncFunction("respondToRegistrationRequest") { id: String, accept: Boolean ->
+            ExperimentalCapabilitiesManager.respondToRegistrationRequest(id, accept, checkNotNull(appContext.currentActivity))
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("getSessionDevice") { id: String ->
+            WearablesManager.getSessionDevice(id)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("mockDeviceSimulate") { id: String, event: Map<String, Any> ->
+            check(isDebug) { "Mock devices are only available in debug builds" }
+            MockDeviceManager.simulate(id, event)
+        }.runOnQueue(Queues.MAIN)
+        AsyncFunction("startMockDeviceTestServer") Coroutine { port: Int ->
+            check(isDebug) { "Mock devices are only available in debug builds" }
+            require(port in 0..65535) { "Invalid port" }
+            MockDeviceManager.startTestServer(checkNotNull(appContext.reactContext), port)
+        }
+        AsyncFunction("stopMockDeviceTestServer") Coroutine { ->
+            check(isDebug) { "Mock devices are only available in debug builds" }
+            MockDeviceManager.stopTestServer(checkNotNull(appContext.reactContext))
+        }
+        AsyncFunction("mockSimulateRegistrationOutcome") { success: Boolean ->
+            check(isDebug) { "Mock devices are only available in debug builds" }
+            MockDeviceManager.simulateRegistrationOutcome(checkNotNull(appContext.reactContext), success)
+        }.runOnQueue(Queues.MAIN)
+
         // MARK: - View
 
         View(EMWDATView::class) {
+            Prop("mockDisplayDeviceId") { view: EMWDATView, id: String? -> view.setMockDisplayDevice(id) }
+
             Prop("isActive") { view: EMWDATView, isActive: Boolean ->
                 view.setActive(isActive)
             }

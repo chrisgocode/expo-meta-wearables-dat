@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 import MWDATCore
 import MWDATMockDevice
 
@@ -18,7 +19,8 @@ public final class MockDeviceManager {
 
     // MARK: - Kit Lifecycle
 
-    public func enableMockDeviceKit(initiallyRegistered: Bool = true, initialPermissionsGranted: Bool = true) {
+    public func enableMockDeviceKit(initiallyRegistered: Bool = true, initialPermissionsGranted: Bool = true) throws {
+        try WearablesManager.shared.configure()
         let config = MockDeviceKitConfig(
             initiallyRegistered: initiallyRegistered,
             initialPermissionsGranted: initialPermissionsGranted
@@ -30,8 +32,8 @@ public final class MockDeviceManager {
         ])
     }
 
-    public func disableMockDeviceKit() {
-        MockDeviceKit.shared.disable()
+    public func disableMockDeviceKit() async {
+        await MockDeviceKit.shared.disable()
         devices.removeAll()
         logger.info("MockDeviceManager", "MockDeviceKit disabled")
     }
@@ -50,11 +52,11 @@ public final class MockDeviceManager {
         return id
     }
 
-    public func unpairMockDevice(id: String) throws {
+    public func unpairMockDevice(id: String) async throws {
         guard let device = devices[id] else {
             throw MockDeviceManagerError.deviceNotFound(id)
         }
-        MockDeviceKit.shared.unpairDevice(device)
+        await MockDeviceKit.shared.unpairDevice(device)
         devices.removeValue(forKey: id)
         logger.info("MockDeviceManager", "Unpaired mock device", context: ["id": id])
     }
@@ -145,6 +147,93 @@ public final class MockDeviceManager {
         ])
     }
 
+    public func createDisplayPreview(id: String) throws -> UIView {
+        try getDevice(id).services.display.createPreviewView()
+    }
+
+    public func simulate(id: String, event: [String: Any]) throws -> Any? {
+        let device = try getDevice(id)
+        func text(_ key: String) throws -> String {
+            guard let value = event[key] as? String else { throw invalid("Missing \(key)") }
+            return value
+        }
+        switch try text("type") {
+        case "battery":
+            let level = event["level"] as? Int
+            guard level == nil || (0...100).contains(level!) else { throw invalid("Battery must be 0–100 or null") }
+            device.setBatteryLevel(level)
+        case "charging":
+            let values: [String: ChargingState] = ["unknown": .unknown, "charging": .charging, "notCharging": .notCharging]
+            guard let value = values[try text("state")] else { throw invalid("Invalid charging state") }
+            device.setChargingState(value)
+        case "thermal":
+            let values: [String: ThermalLevel] = ["unknown": .unknown, "none": .none, "light": .light, "moderate": .moderate,
+                "severe": .severe, "critical": .critical, "emergency": .emergency, "shutdown": .shutdown]
+            guard let value = values[try text("level")] else { throw invalid("Invalid thermal level") }
+            device.setThermalLevel(value)
+        case "input":
+            guard let input = event["event"] as? [String: Any], let type = input["type"] as? String else { throw invalid("Missing input event") }
+            let kit = device.services.input
+            let sources: [String: MWDATMockDevice.InputSource] = ["captouch": .captouch, "neuralBand": .neuralBand, "captureButton": .captureButton,
+                "actionButton": .actionButton, "neuralBandDrag": .neuralBandDrag, "unknown": .unknown]
+            guard let source = sources[input["source"] as? String ?? "captouch"] else { throw invalid("Invalid input source") }
+            switch type {
+            case "nav":
+                switch input["direction"] as? String {
+                case "up": kit.navUp(source: source)
+                case "down": kit.navDown(source: source)
+                case "left": kit.navLeft(source: source)
+                case "right": kit.navRight(source: source)
+                default: throw invalid("Invalid navigation direction")
+                }
+            case "select": kit.select(source: source)
+            case "back": kit.back(source: source)
+            case "button": kit.button(type: .action)
+            case "capture":
+                let values: [String: MWDATMockDevice.CapturePressType] = ["shortPress": .shortPress, "hold": .hold, "doublePress": .doublePress]
+                guard let press = values[input["pressType"] as? String ?? ""] else { throw invalid("Invalid capture press type") }
+                kit.capture(pressType: press)
+            case "drag":
+                let values: [String: MWDATMockDevice.DragAction] = ["down": .down, "move": .move, "up": .up]
+                guard let action = values[input["action"] as? String ?? ""] else { throw invalid("Invalid drag action") }
+                let coords = try ["x", "y", "dx", "dy"].map { key -> Float in
+                    guard let n = input[key] as? NSNumber, n.doubleValue.isFinite else { throw invalid("Invalid drag coordinate") }
+                    return n.floatValue
+                }
+                kit.drag(action: action, x: coords[0], y: coords[1], dx: coords[2], dy: coords[3])
+            default: throw invalid("Invalid input type")
+            }
+        case "motionFeed": device.services.motion.setMotionFeed(fileURL: try localURL(text("fileUrl")))
+        case "transcription":
+            let confidence = event["confidence"] as? Float ?? -1
+            guard confidence == -1 || (0...1).contains(confidence) else { throw invalid("Invalid confidence") }
+            device.services.speech.simulateTranscription(text: try text("text"), isFinal: event["isFinal"] as? Bool ?? true, confidence: confidence)
+        case "speechLocale": device.services.speech.setLocale(try text("locale"))
+        case "speechError":
+            guard let code = event["code"] as? Int, let int32 = Int32(exactly: code) else { throw invalid("Invalid speech error code") }
+            device.services.speech.simulateError(errorCode: int32, message: try text("message"))
+        case "speechCompletion": device.services.speech.simulateCompletion()
+        case "speechSource": device.services.speech.setTranscriptionSource(event["live"] as? Bool == true ? .liveDeviceAsr : .injected)
+        case "launchApp":
+            guard device.services.voiceInvocation.hasConnectedClients else { throw invalid("Start voice invocation listening first") }
+            return device.services.voiceInvocation.sendLaunchAppAction()
+        case "incompleteVoiceInvocation":
+            guard device.services.voiceInvocation.hasConnectedClients else { throw invalid("Start voice invocation listening first") }
+            return device.services.voiceInvocation.sendIncompleteAction()
+        case "capturedPhoto": device.services.cameraCapture.setCapturedPhoto(fileURL: try localURL(text("fileUrl")))
+        case "photoFailure": device.services.cameraCapture.simulateCaptureFailure()
+        case "displayClick": return device.services.display.sendClick(identifier: try text("identifier"))
+        default: throw invalid("Unknown mock event type")
+        }
+        return nil
+    }
+    private func localURL(_ path: String) throws -> URL {
+        if let url = URL(string: path), url.isFileURL { return url }
+        guard path.hasPrefix("/") else { throw invalid("Expected a local file URL or absolute path") }
+        return URL(fileURLWithPath: path)
+    }
+    private func invalid(_ message: String) -> NSError { NSError(domain: "EMWDAT", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+
     // MARK: - Helpers
 
     private func mapGlassesModel(_ model: String) -> GlassesModel {
@@ -152,6 +241,7 @@ public final class MockDeviceManager {
         case "oakleyMetaHSTN": return .oakleyMetaHSTN
         case "oakleyMetaVanguard": return .oakleyMetaVanguard
         case "rayBanMetaOptics": return .rayBanMetaOptics
+        case "metaRayBanDisplay": return .metaRayBanDisplay
         case "metaGlasses": return .metaGlasses
         default: return .rayBanMeta
         }
@@ -166,6 +256,7 @@ public final class MockDeviceManager {
 
     private func mapPermission(_ permission: String) -> Permission? {
         switch permission {
+        case "microphone": return .microphone
         case "camera": return .camera
         default: return nil
         }

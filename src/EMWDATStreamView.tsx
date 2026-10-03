@@ -25,9 +25,17 @@ const NativeView: React.ComponentType<EMWDATStreamViewProps> = requireNativeView
  * ```
  */
 export function EMWDATStreamView({
+  mockDisplayDeviceId,
   isActive = false,
   resizeMode = "contain",
   style,
 }: EMWDATStreamViewProps) {
-  return <NativeView isActive={isActive} resizeMode={resizeMode} style={style} />;
+  return (
+    <NativeView
+      mockDisplayDeviceId={mockDisplayDeviceId}
+      isActive={isActive}
+      resizeMode={resizeMode}
+      style={style}
+    />
+  );
 }

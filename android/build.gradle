@@ -42,11 +42,24 @@ android {
   }
 }
 
+// DAT core brings fbcore 3.7; React Native may select the rest of Fresco at 3.6.
+// Align the family to the highest requested version to avoid runtime ABI crashes.
+rootProject.allprojects {
+  dependencies.components.all { details ->
+    if (details.id.group == 'com.facebook.fresco') {
+      details.belongsTo("com.facebook.fresco:emwdat-fresco-platform:${details.id.version}", true)
+    }
+  }
+}
+
 dependencies {
-  implementation "com.meta.wearable:mwdat-core:0.9.0"
-  implementation "com.meta.wearable:mwdat-camera:0.9.0"
-  implementation "com.meta.wearable:mwdat-display:0.9.0"
-  implementation "com.meta.wearable:mwdat-mockdevice:0.9.0"
+  implementation "com.meta.wearable:mwdat-inputs:1.0.0"
+  implementation "com.meta.wearable:mwdat-motion:1.0.0"
+  implementation "com.meta.wearable:mwdat-speech:1.0.0"
+  implementation "com.meta.wearable:mwdat-core:1.0.0"
+  implementation "com.meta.wearable:mwdat-camera:1.0.0"
+  implementation "com.meta.wearable:mwdat-display:1.0.0"
+  implementation "com.meta.wearable:mwdat-mockdevice:1.0.0"
   implementation "androidx.exifinterface:exifinterface:1.3.7"
   implementation "androidx.activity:activity-ktx:1.9.0"
 }

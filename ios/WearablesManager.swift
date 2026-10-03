@@ -23,7 +23,8 @@ public final class WearablesManager {
     private var devicesToken: AnyListenerToken?
     private var deviceLinkStateTokens: [DeviceIdentifier: AnyListenerToken] = [:]
     private var deviceCompatibilityTokens: [DeviceIdentifier: AnyListenerToken] = [:]
-    private var deviceStateTasks: [DeviceIdentifier: Task<Void, Never>] = [:]
+    private var deviceStateTokens: [DeviceIdentifier: AnyListenerToken] = [:]
+    private var pendingURLs: [URL] = []
     private var urlCallbackObserver: NSObjectProtocol?
 
     // MARK: - Device Sessions
@@ -56,11 +57,15 @@ public final class WearablesManager {
         }
 
         logger.info("Manager", "Configuring SDK")
-        try Wearables.configure()
+        do { try Wearables.configure() }
+        catch WearablesError.alreadyConfigured { /* The host app may initialize DAT first. */ }
         isConfigured = true
 
         setupListeners()
         setupURLCallbackHandler()
+        let queuedURLs = pendingURLs
+        pendingURLs.removeAll()
+        Task { for url in queuedURLs { await handleUrl(url) } }
 
         logger.info("Manager", "SDK configured and listeners attached")
     }
@@ -109,9 +114,18 @@ public final class WearablesManager {
     /// Handle a URL callback from the Meta AI app
     @discardableResult
     public func handleUrl(_ url: URL) async -> Bool {
+        guard isConfigured else {
+            let configuration = Bundle.main.object(forInfoDictionaryKey: "MWDAT") as? [String: Any]
+            guard let scheme = configuration?["AppLinkURLScheme"] as? String,
+                  url.scheme == URL(string: scheme)?.scheme else { return false }
+            if !pendingURLs.contains(url) { pendingURLs.append(url) }
+            return true
+        }
         logger.info("Manager", "Handling URL callback", context: ["url": url.absoluteString])
         do {
-            let handled = try await Wearables.shared.handleUrl(url)
+            let handled = try await Wearables.shared.handleUrl(url, onRegistrationRequest: { request in
+                Task { @MainActor in ExperimentalCapabilitiesManager.shared.receiveRegistrationRequest(request) }
+            })
             logger.info("Manager", "URL callback result", context: ["handled": handled])
             return handled
         } catch {
@@ -146,7 +160,7 @@ public final class WearablesManager {
         for deviceId in removedDevices {
             cancelToken(&deviceLinkStateTokens, deviceId)
             cancelToken(&deviceCompatibilityTokens, deviceId)
-            deviceStateTasks.removeValue(forKey: deviceId)?.cancel()
+            cancelToken(&deviceStateTokens, deviceId)
             logger.debug("Manager", "Removed device listeners", context: ["deviceId": deviceId])
         }
 
@@ -169,9 +183,8 @@ public final class WearablesManager {
                 }
                 deviceCompatibilityTokens[deviceId] = compatToken
 
-                // Device state (thermal) stream — SDK 0.7+
-                deviceStateTasks[deviceId] = Task { @MainActor [weak self] in
-                    for await state in Wearables.shared.deviceStateStream(for: deviceId) {
+                deviceStateTokens[deviceId] = device.addDeviceStateListener { [weak self] state in
+                    Task { @MainActor in
                         self?.handleDeviceStateChange(deviceId: deviceId, state: state)
                     }
                 }
@@ -230,7 +243,13 @@ public final class WearablesManager {
 
         emitEvent("onDeviceStateChange", [
             "deviceId": deviceId,
-            "thermalLevel": mapThermalLevel(state.thermalLevel)
+            "thermalLevel": mapThermalLevel(state.thermalLevel),
+            "batteryLevel": state.batteryLevel as Any? ?? NSNull(),
+            "chargingState": String(describing: state.chargingState),
+            "donState": String(describing: state.donState),
+            "hingeState": String(describing: state.hingeState),
+            "linkState": mapLinkState(state.linkState),
+            "compatibility": mapCompatibility(state.compatibility)
         ])
     }
 
@@ -311,6 +330,9 @@ public final class WearablesManager {
     public func removeSession(sessionId: String) {
         cancelToken(&sessionStateTokens, sessionId)
         cancelToken(&sessionErrorTokens, sessionId)
+        ExperimentalCapabilitiesManager.shared.removeSession(sessionId)
+        CameraSessionManager.shared.removeCameraFromSession(sessionId: sessionId)
+        DisplayManager.shared.removeDisplayFromSession(sessionId: sessionId)
         sessions[sessionId] = nil
         logger.info("Manager", "Session removed", context: ["sessionId": sessionId])
     }
@@ -401,7 +423,7 @@ public final class WearablesManager {
         let status = try await Wearables.shared.requestPermission(permission)
 
         emitEvent("onPermissionStatusChange", [
-            "permission": permission == .camera ? "camera" : "unknown",
+            "permission": permission == .camera ? "camera" : "microphone",
             "status": mapPermissionStatus(status)
         ])
 
@@ -438,7 +460,12 @@ public final class WearablesManager {
             "linkState": mapLinkState(device.linkState),
             "deviceType": mapDeviceType(device.deviceType()),
             "compatibility": mapCompatibility(device.compatibility()),
-            "supportsDisplay": device.supportsDisplay()
+            "supportsDisplay": device.supportsDisplay(),
+            "thermalLevel": mapThermalLevel(device.thermalLevel),
+            "batteryLevel": device.batteryLevel as Any? ?? NSNull(),
+            "chargingState": String(describing: device.chargingState),
+            "donState": String(describing: device.donState),
+            "hingeState": String(describing: device.hingeState)
         ]
     }
 
@@ -534,6 +561,8 @@ public final class WearablesManager {
         case .batteryCritical: return "batteryCritical"
         case .datAppOnTheGlassesUpdateRequired: return "datAppOnTheGlassesUpdateRequired"
         case .dwaUnavailable: return "dwaUnavailable"
+        case .insufficientSDKVersion: return "insufficientSDKVersion"
+        case .dwaOutOfStuRange: return "dwaOutOfStuRange"
         case .unexpectedError(_): return "unexpectedError"
         @unknown default: return "unexpectedError"
         }
@@ -570,13 +599,12 @@ public final class WearablesManager {
         }
         cancelAll(&deviceLinkStateTokens)
         cancelAll(&deviceCompatibilityTokens)
-        for task in deviceStateTasks.values {
-            task.cancel()
-        }
-        deviceStateTasks.removeAll()
+        cancelAll(&deviceStateTokens)
         cancelAll(&sessionStateTokens)
         cancelAll(&sessionErrorTokens)
+        for session in sessions.values { session.stop() }
         sessions.removeAll()
+        pendingURLs.removeAll()
 
         if let observer = urlCallbackObserver {
             NotificationCenter.default.removeObserver(observer)

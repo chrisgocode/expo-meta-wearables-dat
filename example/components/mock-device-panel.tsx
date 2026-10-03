@@ -16,6 +16,7 @@ import { getDocumentAsync } from "expo-document-picker";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { runDATSmokeCheck } from "../dat-smoke-check";
 import { Btn, Section } from "./ui";
 
 interface MockDeviceInfo {
@@ -28,6 +29,7 @@ interface MockDeviceInfo {
 }
 
 export function MockDevicePanel() {
+  const [checking, setChecking] = useState(false);
   const [devices, setDevices] = useState<MockDeviceInfo[]>([]);
 
   const safe = (fn: () => Promise<unknown> | unknown) => async () => {
@@ -131,6 +133,19 @@ export function MockDevicePanel() {
         </Pressable>
       }
     >
+      <Btn
+        label={checking ? "Checking DAT 1.0…" : "Run DAT 1.0 smoke check"}
+        disabled={checking}
+        onPress={() => {
+          setChecking(true);
+          runDATSmokeCheck()
+            .then(() =>
+              Alert.alert("DAT 1.0", "Inputs, Speech, battery and voice response checks passed.")
+            )
+            .catch((error) => Alert.alert("DAT Smoke Check", String(error)))
+            .finally(() => setChecking(false));
+        }}
+      />
       <Btn label="Create Mock Device" onPress={safe(handleCreate)} />
 
       {devices.map((device) => (

@@ -27,8 +27,8 @@ Pod::Spec.new do |s|
   # Meta Wearables DAT SDK via Swift Package Manager
   spm_dependency(s,
     url: 'https://github.com/facebook/meta-wearables-dat-ios',
-    requirement: { kind: 'upToNextMinorVersion', minimumVersion: '0.9.0' },
-    products: ['MWDATCore', 'MWDATCamera', 'MWDATDisplay', 'MWDATMockDevice']
+    requirement: { kind: 'upToNextMinorVersion', minimumVersion: '1.0.0' },
+    products: ['MWDATCore', 'MWDATCamera', 'MWDATDisplay', 'MWDATMockDevice', 'MWDATInputs', 'MWDATMotion', 'MWDATSpeech']
   )
 
   # Swift/Objective-C settings
