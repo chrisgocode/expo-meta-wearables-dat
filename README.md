@@ -94,14 +94,15 @@ Add the plugin to your `app.json` / `app.config.js`:
 }
 ```
 
-| Prop                        | Required | Description                                                                                                                                                                   |
-| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `urlScheme`                 | Yes      | URL scheme for Meta AI app callback (e.g. `"myapp"`). Do not include `://` — only the scheme name                                                                             |
-| `metaAppId`                 | No       | Meta App ID from [Wearables Developer Center](https://wearables.developer.meta.com/). Omit for Developer Mode                                                                 |
-| `clientToken`               | No       | Client Token from Wearables Developer Center                                                                                                                                  |
-| `bluetoothUsageDescription` | No       | Custom Bluetooth usage description (iOS only)                                                                                                                                 |
-| `githubToken`               | No       | Deprecated and ignored: DAT 1.0 uses Maven Central; no token needed                                                                                                           |
-| `crashReportingOptOut`      | No       | Opt out of DAT SDK crash reporting (SDK 0.9+). Writes `MWDAT > CrashReporting > OptOut` on iOS and the `com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT` meta-data on Android |
+| Prop                           | Required | Description                                                                                                                                                                                                           |
+| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `urlScheme`                    | Yes      | URL scheme for Meta AI app callback (e.g. `"myapp"`). Do not include `://` — only the scheme name                                                                                                                     |
+| `metaAppId`                    | No       | Meta App ID from [Wearables Developer Center](https://wearables.developer.meta.com/). Omit for Developer Mode                                                                                                         |
+| `clientToken`                  | No       | Client Token from Wearables Developer Center                                                                                                                                                                          |
+| `bluetoothUsageDescription`    | No       | Custom Bluetooth usage description (iOS only)                                                                                                                                                                         |
+| `localNetworkUsageDescription` | No       | Custom local network usage description (iOS only). The plugin also adds the Wi-Fi entitlements, `NSBonjourServices` and the background modes of Meta's sample, without which a session fails with `noEligibleDevice`. |
+| `githubToken`                  | No       | Deprecated and ignored: DAT 1.0 uses Maven Central; no token needed                                                                                                                                                   |
+| `crashReportingOptOut`         | No       | Opt out of DAT SDK crash reporting (SDK 0.9+). Writes `MWDAT > CrashReporting > OptOut` on iOS and the `com.meta.wearable.mwdat.CRASH_REPORTING_OPT_OUT` meta-data on Android                                         |
 
 ### iOS
 
