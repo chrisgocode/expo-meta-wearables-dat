@@ -1,6 +1,7 @@
 import {
   type ConfigPlugin,
   withAndroidManifest,
+  withEntitlementsPlist,
   withGradleProperties,
   withInfoPlist,
   withPodfileProperties,
@@ -18,6 +19,8 @@ type EMWDATPluginProps = {
   clientToken?: string;
   /** Custom NSBluetoothAlwaysUsageDescription text */
   bluetoothUsageDescription?: string;
+  /** Custom NSLocalNetworkUsageDescription text (iOS): the glasses are also reached over Wi-Fi. */
+  localNetworkUsageDescription?: string;
   /** @deprecated DAT 1.0 is on Maven Central; no token is needed. Ignored. */
   githubToken?: string;
   /** Opt out of DAT SDK crash reporting (SDK 0.9+). Default: false. */
@@ -162,12 +165,24 @@ done
     // UISupportedExternalAccessoryProtocols — wearables communication
     addUniqueStringToArray(plist, "UISupportedExternalAccessoryProtocols", "com.meta.ar.wearable");
 
-    // UIBackgroundModes — required for Bluetooth and external accessory
-    addUniqueStringToArray(plist, "UIBackgroundModes", "bluetooth-peripheral");
-    addUniqueStringToArray(plist, "UIBackgroundModes", "external-accessory");
+    // UIBackgroundModes — the set Meta's DAT 1.0 sample (samples/CameraAccess) declares, plus external-accessory
+    for (const mode of [
+      "processing",
+      "bluetooth-central",
+      "audio",
+      "bluetooth-peripheral",
+      "external-accessory",
+    ]) {
+      addUniqueStringToArray(plist, "UIBackgroundModes", mode);
+    }
 
-    // NSBluetoothAlwaysUsageDescription
+    // Bluetooth and local network: required by the sample's "Device Access Toolkit Apps" section.
     plist.NSBluetoothAlwaysUsageDescription = bluetoothDescription;
+    plist.NSBluetoothPeripheralUsageDescription ??= bluetoothDescription;
+    plist.NSLocalNetworkUsageDescription ??=
+      props.localNetworkUsageDescription ??
+      "This lets your phone find and connect to your glasses over Wi-Fi.";
+    addUniqueStringToArray(plist, "NSBonjourServices", "_bonjour._tcp");
 
     // MWDAT configuration dictionary
     const mwdatConfig: Record<string, string> = {
@@ -183,6 +198,19 @@ done
         { ...mwdatConfig, CrashReporting: { OptOut: true } }
       : mwdatConfig;
 
+    return config;
+  });
+
+  // Entitlements of Meta's DAT 1.0 sample. Without the Wi-Fi ones a registered app with a granted
+  // permission still gets `noEligibleDevice` when it creates a session (meta-wearables-dat-ios#239).
+  config = withEntitlementsPlist(config, (config) => {
+    const entitlements = config.modResults;
+    entitlements["com.apple.developer.networking.HotspotConfiguration"] = true;
+    entitlements["com.apple.developer.networking.wifi-info"] = true;
+    const groups = (entitlements["keychain-access-groups"] as string[] | undefined) ?? [];
+    const own = "$(AppIdentifierPrefix)$(CFBundleIdentifier)";
+    if (!groups.includes(own)) groups.push(own);
+    entitlements["keychain-access-groups"] = groups;
     return config;
   });
 

@@ -101,3 +101,29 @@ it("prebuild enables collision-free SPM project generation after React Native pr
   const second = await apply("ios", "podfile", first);
   expect(second.contents).toBe(first.contents);
 });
+
+it("gives an iOS app what Meta's DAT 1.0 sample declares: entitlements, local network and background modes", async () => {
+  const entitlements = await apply("ios", "entitlements", {
+    "keychain-access-groups": ["$(AppIdentifierPrefix)shared"],
+  });
+  expect(entitlements["com.apple.developer.networking.HotspotConfiguration"]).toBe(true);
+  expect(entitlements["com.apple.developer.networking.wifi-info"]).toBe(true);
+  expect(entitlements["keychain-access-groups"]).toEqual([
+    "$(AppIdentifierPrefix)shared",
+    "$(AppIdentifierPrefix)$(CFBundleIdentifier)",
+  ]);
+
+  const plist = await apply("ios", "infoPlist", { NSLocalNetworkUsageDescription: "mine" });
+  expect(plist.NSLocalNetworkUsageDescription).toBe("mine");
+  expect(plist.NSBonjourServices).toEqual(["_bonjour._tcp"]);
+  expect(plist.NSBluetoothPeripheralUsageDescription).toBeTruthy();
+  expect(plist.UIBackgroundModes).toEqual(
+    expect.arrayContaining([
+      "processing",
+      "bluetooth-central",
+      "audio",
+      "bluetooth-peripheral",
+      "external-accessory",
+    ])
+  );
+});
